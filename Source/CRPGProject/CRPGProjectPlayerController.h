@@ -52,6 +52,7 @@ protected:
 	/** Gameplay initialization */
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void Tick(float DeltaTime) override;
 
 	/** Input mapping context setup */
 	virtual void SetupInputComponent() override;
@@ -75,6 +76,10 @@ protected:
 	void BindToCameraModeSubsystem();
 	void UnbindFromCameraModeSubsystem();
  void ApplyCameraModeInputState(ECameraMode CameraMode);
+ void StartTacticalPathTraversal(const TArray<FVector>& PathPoints);
+	void UpdateTacticalPathTraversal(float DeltaTime);
+	void ClearTacticalPathTraversal(bool bStopPawnMovement);
+	void RotatePawnTowardDirection(APawn* ControlledPawn, const FVector& MoveDirection, float DeltaTime);
 	UFUNCTION()
 	void HandleCameraModeChanged(const FCameraModeTransition& Transition);
 	void UpdateTacticalRoamInput();
@@ -87,6 +92,15 @@ protected:
 
 	float TacticalMoveForwardInput = 0.0f;
 	float TacticalMoveRightInput = 0.0f;
+ UPROPERTY(EditAnywhere, Category = "Input|Tactical", meta = (ClampMin = "1.0", Units = "cm"))
+	float TacticalAcceptanceRadius = 50.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Input|Tactical", meta = (ClampMin = "0.0"))
+	float TacticalPathRotationInterpSpeed = 10.0f;
+
+	bool bHasActiveTacticalPath = false;
+	TArray<FVector> ActiveTacticalPathPoints;
+	int32 CurrentPathIndex = INDEX_NONE;
 	bool bIsTacticalRotateHeld = false;
 
 public:

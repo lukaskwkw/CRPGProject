@@ -5,15 +5,14 @@
 #include "CRPGProjectPlayerController.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
-#include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "GameFramework/PlayerInput.h"
 #include "InputMappingContext.h"
 #include "InputCoreTypes.h"
+#include "NavigationPath.h"
 #include "NavigationSystem.h"
-#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Blueprint/UserWidget.h"
 #include "CRPGProject.h"
 #include "Widgets/Input/SVirtualJoystick.h"
@@ -21,6 +20,7 @@
 ACRPGProjectPlayerController::ACRPGProjectPlayerController()
 {
 	CameraControllerComponent = CreateDefaultSubobject<UCameraControllerComponent>(TEXT("CameraControllerComponent"));
+	PrimaryActorTick.bCanEverTick = true;
 }
 
 void ACRPGProjectPlayerController::BeginPlay()
@@ -51,9 +51,16 @@ void ACRPGProjectPlayerController::BeginPlay()
 
 void ACRPGProjectPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ClearTacticalPathTraversal(true);
 	UnbindFromCameraModeSubsystem();
 	SetControlledPawnTacticalInputSuppressed(false);
 	Super::EndPlay(EndPlayReason);
+}
+
+void ACRPGProjectPlayerController::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+	UpdateTacticalPathTraversal(DeltaTime);
 }
 
 void ACRPGProjectPlayerController::SetupInputComponent()
@@ -289,10 +296,21 @@ void ACRPGProjectPlayerController::HandleTacticalLeftClick()
 	FNavLocation ProjectedLocation;
 	if (!NavigationSystem->ProjectPointToNavigation(HitResult.ImpactPoint, ProjectedLocation))
 	{
+		ClearTacticalPathTraversal(true);
 		return;
 	}
 
-	UAIBlueprintHelperLibrary::SimpleMoveToLocation(this, ProjectedLocation.Location);
+	UE_LOG(LogCRPGProject, Verbose, TEXT("[TacticalMove] Destination chosen: %s"), *ProjectedLocation.Location.ToString());
+
+	UNavigationPath *NavigationPath = NavigationSystem->FindPathToLocationSynchronously(GetWorld(), ControlledPawn->GetActorLocation(), ProjectedLocation.Location, ControlledPawn);
+	if (!NavigationPath || !NavigationPath->IsValid() || NavigationPath->PathPoints.Num() == 0)
+	{
+		ClearTacticalPathTraversal(true);
+		return;
+	}
+
+	UE_LOG(LogCRPGProject, Verbose, TEXT("[TacticalMove] Path point count: %d"), NavigationPath->PathPoints.Num());
+	StartTacticalPathTraversal(NavigationPath->PathPoints);
 }
 
 void ACRPGProjectPlayerController::BindToCameraModeSubsystem()
@@ -343,6 +361,77 @@ void ACRPGProjectPlayerController::ApplyCameraModeInputState(ECameraMode CameraM
 	SetInputMode(FInputModeGameOnly());
 }
 
+void ACRPGProjectPlayerController::StartTacticalPathTraversal(const TArray<FVector> &PathPoints)
+{
+	ActiveTacticalPathPoints = PathPoints;
+	bHasActiveTacticalPath = ActiveTacticalPathPoints.Num() > 0;
+	CurrentPathIndex = ActiveTacticalPathPoints.Num() > 1 ? 1 : 0;
+
+	UE_LOG(LogCRPGProject, Verbose, TEXT("[TacticalMove] Path traversal started. Active points: %d, starting index: %d"), ActiveTacticalPathPoints.Num(), CurrentPathIndex);
+}
+
+void ACRPGProjectPlayerController::UpdateTacticalPathTraversal(float DeltaTime)
+{
+	if (!bHasActiveTacticalPath || !IsTacticalModeActive())
+	{
+		return;
+	}
+
+	ACharacter *ControlledCharacter = Cast<ACharacter>(GetPawn());
+	if (!ControlledCharacter || !ActiveTacticalPathPoints.IsValidIndex(CurrentPathIndex))
+	{
+		ClearTacticalPathTraversal(false);
+		return;
+	}
+
+	const FVector PawnLocation = ControlledCharacter->GetActorLocation();
+	const FVector TargetPoint = ActiveTacticalPathPoints[CurrentPathIndex];
+	FVector ToTarget = TargetPoint - PawnLocation;
+	ToTarget.Z = 0.0f;
+
+	if (ToTarget.SizeSquared() <= FMath::Square(TacticalAcceptanceRadius))
+	{
+		UE_LOG(LogCRPGProject, Verbose, TEXT("[TacticalMove] Reached path node %d at %s"), CurrentPathIndex, *TargetPoint.ToString());
+		++CurrentPathIndex;
+
+		if (!ActiveTacticalPathPoints.IsValidIndex(CurrentPathIndex))
+		{
+			UE_LOG(LogCRPGProject, Verbose, TEXT("[TacticalMove] Tactical traversal completed"));
+			ClearTacticalPathTraversal(true);
+		}
+
+		return;
+	}
+
+	const FVector MoveDirection = ToTarget.GetSafeNormal();
+	RotatePawnTowardDirection(ControlledCharacter, MoveDirection, DeltaTime);
+	ControlledCharacter->AddMovementInput(MoveDirection, 1.0f);
+}
+
+void ACRPGProjectPlayerController::ClearTacticalPathTraversal(bool bStopPawnMovement)
+{
+	bHasActiveTacticalPath = false;
+	ActiveTacticalPathPoints.Reset();
+	CurrentPathIndex = INDEX_NONE;
+
+	if (bStopPawnMovement)
+	{
+		StopTacticalPrototypeMovement();
+	}
+}
+
+void ACRPGProjectPlayerController::RotatePawnTowardDirection(APawn *ControlledPawn, const FVector &MoveDirection, float DeltaTime)
+{
+	if (!ControlledPawn || MoveDirection.IsNearlyZero())
+	{
+		return;
+	}
+
+	const FRotator DesiredRotation = MoveDirection.Rotation();
+	const FRotator NewRotation = FMath::RInterpTo(ControlledPawn->GetActorRotation(), DesiredRotation, DeltaTime, TacticalPathRotationInterpSpeed);
+	ControlledPawn->SetActorRotation(NewRotation);
+}
+
 void ACRPGProjectPlayerController::HandleCameraModeChanged(const FCameraModeTransition &Transition)
 {
 	bIsTacticalRotateHeld = false;
@@ -351,6 +440,7 @@ void ACRPGProjectPlayerController::HandleCameraModeChanged(const FCameraModeTran
 
 	if (Transition.NewMode == ECameraMode::Tactical)
 	{
+		ClearTacticalPathTraversal(true);
 		StopMovement();
 		StopTacticalPrototypeMovement();
 		return;
@@ -358,6 +448,7 @@ void ACRPGProjectPlayerController::HandleCameraModeChanged(const FCameraModeTran
 
 	if (Transition.NewMode != ECameraMode::Tactical)
 	{
+		ClearTacticalPathTraversal(true);
 		TacticalMoveForwardInput = 0.0f;
 		TacticalMoveRightInput = 0.0f;
 
@@ -407,6 +498,8 @@ void ACRPGProjectPlayerController::StopTacticalPrototypeMovement()
 		ControlledCharacter->StopJumping();
 		ControlledCharacter->GetCharacterMovement()->StopMovementImmediately();
 	}
+
+	StopMovement();
 }
 
 bool ACRPGProjectPlayerController::IsTacticalModeActive() const

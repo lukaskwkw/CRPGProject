@@ -163,3 +163,9 @@ Already implemented:
 ## 12. Core Philosophy
 
 "C++ defines systems. GAS defines combat simulation. DSL defines the world. EventBus connects everything."
+
+---
+
+## 13. Tactical Movement Rules
+
+For the possessed player character, use the NavigationSystem only for path calculation. Actual locomotion should be driven manually each frame via `CharacterMovement::AddMovementInput`, rather than using AI-driven movement systems like `SimpleMoveToLocation` or `AIController` path following.
