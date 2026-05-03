@@ -45,6 +45,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Camera")
     bool RequestCameraMode(ECameraMode NewMode, float BlendTime = -1.0f, const FString& SourceEvent = TEXT("manual_request"));
 
+    UFUNCTION(BlueprintCallable, Category = "Camera")
+    bool RequestToggleCameraMode(float BlendTime = -1.0f, const FString& SourceEvent = TEXT("debug_toggle"));
+
     UFUNCTION(BlueprintPure, Category = "Camera")
     ECameraMode GetCurrentCameraMode() const;
 

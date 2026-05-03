@@ -1,13 +1,21 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 
+#include "CameraControllerComponent.h"
+#include "CameraModeSubsystem.h"
 #include "CRPGProjectPlayerController.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "InputMappingContext.h"
+#include "InputCoreTypes.h"
 #include "Blueprint/UserWidget.h"
 #include "CRPGProject.h"
 #include "Widgets/Input/SVirtualJoystick.h"
+
+ACRPGProjectPlayerController::ACRPGProjectPlayerController()
+{
+	CameraControllerComponent = CreateDefaultSubobject<UCameraControllerComponent>(TEXT("CameraControllerComponent"));
+}
 
 void ACRPGProjectPlayerController::BeginPlay()
 {
@@ -37,6 +45,11 @@ void ACRPGProjectPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
 
+	if (InputComponent)
+	{
+		InputComponent->BindKey(EKeys::V, IE_Pressed, this, &ACRPGProjectPlayerController::ToggleDebugCameraMode);
+	}
+
 	// only add IMCs for local player controllers
 	if (IsLocalPlayerController())
 	{
@@ -56,6 +69,22 @@ void ACRPGProjectPlayerController::SetupInputComponent()
 					Subsystem->AddMappingContext(CurrentContext, 0);
 				}
 			}
+		}
+	}
+}
+
+void ACRPGProjectPlayerController::ToggleDebugCameraMode()
+{
+	if (!IsLocalPlayerController())
+	{
+		return;
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UCameraModeSubsystem* Subsystem = GameInstance->GetSubsystem<UCameraModeSubsystem>())
+		{
+			Subsystem->RequestToggleCameraMode();
 		}
 	}
 }

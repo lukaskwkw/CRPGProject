@@ -6,6 +6,8 @@
 #include "GameFramework/PlayerController.h"
 #include "CRPGProjectPlayerController.generated.h"
 
+class UCameraControllerComponent;
+class UCameraModeSubsystem;
 class UInputMappingContext;
 class UUserWidget;
 
@@ -17,6 +19,9 @@ UCLASS(abstract)
 class ACRPGProjectPlayerController : public APlayerController
 {
 	GENERATED_BODY()
+
+public:
+	ACRPGProjectPlayerController();
 	
 protected:
 
@@ -40,13 +45,24 @@ protected:
 	UPROPERTY(EditAnywhere, Config, Category = "Input|Touch Controls")
 	bool bForceTouchControls = false;
 
+	/** Camera transition controller owned by the player controller */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UCameraControllerComponent> CameraControllerComponent;
+
 	/** Gameplay initialization */
 	virtual void BeginPlay() override;
 
 	/** Input mapping context setup */
 	virtual void SetupInputComponent() override;
 
+	/** Temporary debug camera mode toggle */
+	void ToggleDebugCameraMode();
+
 	/** Returns true if the player should use UMG touch controls */
 	bool ShouldUseTouchControls() const;
+
+public:
+
+	FORCEINLINE UCameraControllerComponent* GetCameraControllerComponent() const { return CameraControllerComponent; }
 
 };

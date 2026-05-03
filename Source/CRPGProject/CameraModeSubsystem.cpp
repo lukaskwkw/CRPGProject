@@ -47,6 +47,15 @@ bool UCameraModeSubsystem::RequestCameraMode(ECameraMode NewMode, float BlendTim
     return ApplyCameraMode(NewMode, BlendTime, SourceEvent);
 }
 
+bool UCameraModeSubsystem::RequestToggleCameraMode(float BlendTime, const FString& SourceEvent)
+{
+    const ECameraMode ToggledMode = CurrentMode == ECameraMode::Tactical
+        ? ECameraMode::Exploration
+        : ECameraMode::Tactical;
+
+    return ApplyCameraMode(ToggledMode, BlendTime, SourceEvent);
+}
+
 ECameraMode UCameraModeSubsystem::GetCurrentCameraMode() const
 {
     return CurrentMode;
