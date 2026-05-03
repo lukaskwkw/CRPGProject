@@ -21,5 +21,6 @@ void UEventBusSubsystem::PublishEvent(const FString& EventName, const FString& P
 
     UE_LOG(LogTemp, Warning, TEXT("[EventBus] Published Event -> %s | Payload -> %s"), *EventName, *Payload);
 
+    OnNamedGameEvent.Broadcast(EventName, Payload);
     OnGameEvent.Broadcast(Payload);
 }

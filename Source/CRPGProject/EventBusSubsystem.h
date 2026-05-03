@@ -4,10 +4,8 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "EventBusSubsystem.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGameEventSignature, const FString&, Payload);
-
 USTRUCT(BlueprintType)
-struct FGameEvent
+struct CRPGPROJECT_API FGameEvent
 {
     GENERATED_BODY()
 
@@ -24,6 +22,9 @@ struct FGameEvent
     }
 };
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGameEventSignature, const FString&, Payload);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FNamedGameEventSignature, const FString&, const FString&);
+
 UCLASS()
 class CRPGPROJECT_API UEventBusSubsystem : public UGameInstanceSubsystem
 {
@@ -38,6 +39,8 @@ public:
 
     UPROPERTY(BlueprintAssignable)
     FGameEventSignature OnGameEvent;
+
+    FNamedGameEventSignature OnNamedGameEvent;
 
 private:
     TArray<FGameEvent> EventHistory;
