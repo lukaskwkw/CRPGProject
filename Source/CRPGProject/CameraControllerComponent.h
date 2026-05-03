@@ -52,6 +52,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Camera|Tactical")
     void RecenterOnActivePawn();
 
+    UFUNCTION(BlueprintCallable, Category = "Camera|Tactical")
+    void AdjustTacticalZoom(float ZoomAxisValue);
+
+    UFUNCTION(BlueprintCallable, Category = "Camera|Tactical")
+    void AddTacticalYawInput(float YawAxisValue);
+
     UFUNCTION(BlueprintPure, Category = "Camera")
     ECameraMode GetActiveCameraMode() const;
 
@@ -63,6 +69,7 @@ private:
     void InitializeForCurrentMode();
     void BindToCameraModeSubsystem();
     void UnbindFromCameraModeSubsystem();
+    void UpdateTacticalPitchFromZoom();
     void EnsureTacticalCamera();
     void HandleControlledPawnChanged();
     void EnterExplorationMode(const FCameraModeTransition& Transition);
@@ -90,6 +97,24 @@ private:
 
     UPROPERTY(EditAnywhere, Category = "Camera|Tactical", meta = (ClampMin = "0.0", Units = "cm/s"))
     float TacticalRoamSpeed = 1800.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Camera|Tactical", meta = (ClampMin = "0.0", Units = "cm"))
+    float TacticalMinimumArmLength = 500.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Camera|Tactical", meta = (ClampMin = "0.0", Units = "cm"))
+    float TacticalMaximumArmLength = 1500.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Camera|Tactical", meta = (ClampMin = "0.0", Units = "cm"))
+    float TacticalZoomStep = 100.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Camera|Tactical", meta = (ClampMin = "0.0"))
+    float TacticalYawRotationSpeed = 2.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Camera|Tactical")
+    float TacticalClosestPitch = -50.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Camera|Tactical")
+    float TacticalFarthestPitch = -75.0f;
 
     UPROPERTY(EditAnywhere, Category = "Camera|Tactical", meta = (ClampMin = "0.0"))
     float MinimumInterpolationSpeed = 4.0f;
@@ -126,6 +151,9 @@ private:
 
     UPROPERTY(Transient)
     FVector2D TacticalRoamInput = FVector2D::ZeroVector;
+
+    UPROPERTY(Transient)
+    float TacticalYaw = 0.0f;
 
     UPROPERTY(Transient)
     bool bHasTacticalAnchor = false;

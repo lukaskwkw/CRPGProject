@@ -24,6 +24,7 @@ UCameraControllerComponent::UCameraControllerComponent()
     TacticalSettings.SocketOffset = FVector::ZeroVector;
     TacticalSettings.Rotation = FRotator(-60.0f, 0.0f, 0.0f);
     TacticalSettings.FieldOfView = 75.0f;
+    UpdateTacticalPitchFromZoom();
 
     CinematicSettings = TacticalSettings;
 }
@@ -103,6 +104,32 @@ void UCameraControllerComponent::RecenterOnActivePawn()
     }
 }
 
+void UCameraControllerComponent::AdjustTacticalZoom(float ZoomAxisValue)
+{
+    if (ActiveCameraMode != ECameraMode::Tactical || FMath::IsNearlyZero(ZoomAxisValue))
+    {
+        return;
+    }
+
+    TacticalSettings.ArmLength = FMath::Clamp(
+        TacticalSettings.ArmLength - (ZoomAxisValue * TacticalZoomStep),
+        TacticalMinimumArmLength,
+        TacticalMaximumArmLength);
+
+    UpdateTacticalPitchFromZoom();
+}
+
+void UCameraControllerComponent::AddTacticalYawInput(float YawAxisValue)
+{
+    if (ActiveCameraMode != ECameraMode::Tactical || FMath::IsNearlyZero(YawAxisValue))
+    {
+        return;
+    }
+
+    TacticalYaw = FRotator::NormalizeAxis(TacticalYaw + (YawAxisValue * TacticalYawRotationSpeed));
+    TacticalSettings.Rotation.Yaw = TacticalYaw;
+}
+
 ECameraMode UCameraControllerComponent::GetActiveCameraMode() const
 {
     return ActiveCameraMode;
@@ -128,6 +155,15 @@ void UCameraControllerComponent::HandleCameraModeChanged(const FCameraModeTransi
         EnterExplorationMode(Transition);
         break;
     }
+}
+
+void UCameraControllerComponent::UpdateTacticalPitchFromZoom()
+{
+    const float ZoomAlpha = TacticalMaximumArmLength > TacticalMinimumArmLength
+        ? FMath::GetRangePct(TacticalMinimumArmLength, TacticalMaximumArmLength, TacticalSettings.ArmLength)
+        : 0.0f;
+
+    TacticalSettings.Rotation.Pitch = FMath::Lerp(TacticalClosestPitch, TacticalFarthestPitch, ZoomAlpha);
 }
 
 void UCameraControllerComponent::InitializeForCurrentMode()
@@ -223,6 +259,8 @@ void UCameraControllerComponent::EnterExplorationMode(const FCameraModeTransitio
     }
 
     ClearTacticalRoamInput();
+    TacticalYaw = 0.0f;
+    TacticalSettings.Rotation.Yaw = TacticalYaw;
 
     if (APawn* Pawn = GetControlledPawn())
     {
@@ -239,6 +277,7 @@ void UCameraControllerComponent::EnterTacticalMode(const FCameraModeTransition& 
 
     EnsureTacticalCamera();
     RecenterOnActivePawn();
+    TacticalYaw = TacticalSettings.Rotation.Yaw;
 
     if (TacticalCameraActor)
     {
@@ -296,8 +335,9 @@ void UCameraControllerComponent::UpdateTacticalCamera(float DeltaTime)
     const float InterpSpeed = GetModeInterpolationSpeed();
     const float AnchorInterpSpeed = GetAnchorInterpolationSpeed();
     const FVector FocusLocation = GetPawnFocusLocation(Pawn);
-    const FVector ForwardDirection = FRotationMatrix(FRotator(0.0f, OwningPlayerController->GetControlRotation().Yaw, 0.0f)).GetUnitAxis(EAxis::X);
-    const FVector RightDirection = FRotationMatrix(FRotator(0.0f, OwningPlayerController->GetControlRotation().Yaw, 0.0f)).GetUnitAxis(EAxis::Y);
+    const FRotator TacticalYawRotation(0.0f, Settings.Rotation.Yaw, 0.0f);
+    const FVector ForwardDirection = FRotationMatrix(TacticalYawRotation).GetUnitAxis(EAxis::X);
+    const FVector RightDirection = FRotationMatrix(TacticalYawRotation).GetUnitAxis(EAxis::Y);
 
     TargetTacticalAnchorLocation += ((ForwardDirection * TacticalRoamInput.Y) + (RightDirection * TacticalRoamInput.X)) * TacticalRoamSpeed * DeltaTime;
 

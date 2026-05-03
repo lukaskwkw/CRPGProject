@@ -2,12 +2,12 @@
 
 #pragma once
 
+#include "CameraModeSubsystem.h"
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "CRPGProjectPlayerController.generated.h"
 
 class UCameraControllerComponent;
-class UCameraModeSubsystem;
 class UInputMappingContext;
 class UUserWidget;
 
@@ -51,15 +51,43 @@ protected:
 
 	/** Gameplay initialization */
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/** Input mapping context setup */
 	virtual void SetupInputComponent() override;
 
 	/** Temporary debug camera mode toggle */
 	void ToggleDebugCameraMode();
+	void HandleTacticalMoveForwardPressed();
+	void HandleTacticalMoveForwardReleased();
+	void HandleTacticalMoveBackwardPressed();
+	void HandleTacticalMoveBackwardReleased();
+	void HandleTacticalMoveRightPressed();
+	void HandleTacticalMoveRightReleased();
+	void HandleTacticalMoveLeftPressed();
+	void HandleTacticalMoveLeftReleased();
+	void HandleTacticalZoom(float AxisValue);
+	void HandleTacticalMouseX(float AxisValue);
+	void HandleTacticalRightMousePressed();
+	void HandleTacticalRightMouseReleased();
+	void HandleTacticalLeftMousePressed();
+	void HandleTacticalLeftClick();
+	void BindToCameraModeSubsystem();
+	void UnbindFromCameraModeSubsystem();
+ void ApplyCameraModeInputState(ECameraMode CameraMode);
+	UFUNCTION()
+	void HandleCameraModeChanged(const FCameraModeTransition& Transition);
+	void UpdateTacticalRoamInput();
+ void SetControlledPawnTacticalInputSuppressed(bool bSuppressInput);
+	void StopTacticalPrototypeMovement();
+	bool IsTacticalModeActive() const;
 
 	/** Returns true if the player should use UMG touch controls */
 	bool ShouldUseTouchControls() const;
+
+	float TacticalMoveForwardInput = 0.0f;
+	float TacticalMoveRightInput = 0.0f;
+	bool bIsTacticalRotateHeld = false;
 
 public:
 

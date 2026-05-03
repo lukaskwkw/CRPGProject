@@ -9,8 +9,7 @@ This is a **turn-based DND CRPG built in Unreal Engine 5** with a hybrid archite
 - DSL (JSON-based initially) = narrative, quests, AI behavior, world definitions
 - EventBus = global decoupled communication layer
 
-This is NOT a Blueprint-driven project.
-Blueprints are only allowed for glue/UI/prototyping.
+This is NOT a Blueprint-driven project. Blueprints are only allowed for glue/UI/prototyping.
 
 ---
 
@@ -26,6 +25,13 @@ Always respect:
 - Presentation Layer (UI / View)
 
 Never mix responsibilities across layers.
+
+### 2.2 Unreal Engine Class Modifications
+
+When modifying Unreal Engine classes:
+
+- Verify overridden engine methods are not final.
+- Include concrete headers for any engine component types used directly.
 
 ---
 

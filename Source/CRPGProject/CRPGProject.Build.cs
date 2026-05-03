@@ -15,6 +15,7 @@ public class CRPGProject : ModuleRules
 			"InputCore",
 			"EnhancedInput",
 			"AIModule",
+          "NavigationSystem",
 			"StateTreeModule",
             "GameplayTasks",
             "GameplayAbilities",
