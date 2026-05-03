@@ -16,6 +16,9 @@ public class CRPGProject : ModuleRules
 			"EnhancedInput",
 			"AIModule",
 			"StateTreeModule",
+            "GameplayTasks",
+            "GameplayAbilities",
+            "GameplayTags",
 			"GameplayStateTreeModule",
 			"UMG",
 			"Slate"
