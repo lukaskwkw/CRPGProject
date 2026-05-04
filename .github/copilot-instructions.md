@@ -174,6 +174,8 @@ Already implemented:
 
 For the possessed player character, use the NavigationSystem only for path calculation. Actual locomotion should be driven manually each frame via `CharacterMovement::AddMovementInput`, rather than using AI-driven movement systems like `SimpleMoveToLocation` or `AIController` path following.
 
+Additionally, implement hover-based path preview for tactical movement UX. Use click to commit actions and allow over-budget clicks by clamping traversal to the affordable portion while distinctly previewing over-budget segments.
+
 ---
 
 ## 14. Source Folder Architecture Rules
