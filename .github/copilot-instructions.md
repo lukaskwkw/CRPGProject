@@ -169,3 +169,28 @@ Already implemented:
 ## 13. Tactical Movement Rules
 
 For the possessed player character, use the NavigationSystem only for path calculation. Actual locomotion should be driven manually each frame via `CharacterMovement::AddMovementInput`, rather than using AI-driven movement systems like `SimpleMoveToLocation` or `AIController` path following.
+
+---
+
+## 14. Source Folder Architecture Rules
+
+Never place new gameplay classes in Source/CRPGProject root.
+
+Always organize new classes by bounded gameplay domain:
+
+* Core/*
+* Framework/*
+* Camera/*
+* Tactical/*
+* Combat/*
+* UI/*
+* Events/*
+* World/*
+* Data/*
+* Utilities/*
+
+Subsystems must live inside their owning domain's Subsystems folder.
+Components must live inside their owning domain's Components folder.
+Controllers must live inside Framework/Controllers.
+Base gameplay characters must live inside Framework/Characters.
+Combat GAS classes must live inside Combat/*.
