@@ -9,6 +9,9 @@
 
 class UCameraControllerComponent;
 class UInputMappingContext;
+class UNavigationPath;
+class UTacticalCombatHUDWidget;
+class UTacticalTurnSubsystem;
 class UUserWidget;
 
 /**
@@ -40,6 +43,12 @@ protected:
 	/** Pointer to the mobile controls widget */
 	UPROPERTY()
 	TObjectPtr<UUserWidget> MobileControlsWidget;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|HUD", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UTacticalCombatHUDWidget> TacticalCombatHUDWidgetClass;
+
+	UPROPERTY()
+	TObjectPtr<UTacticalCombatHUDWidget> TacticalCombatHUDWidget;
 
 	/** If true, the player will use UMG touch controls even if not playing on mobile platforms */
 	UPROPERTY(EditAnywhere, Config, Category = "Input|Touch Controls")
@@ -75,15 +84,24 @@ protected:
 	void HandleTacticalLeftClick();
 	void BindToCameraModeSubsystem();
 	void UnbindFromCameraModeSubsystem();
- void ApplyCameraModeInputState(ECameraMode CameraMode);
- void StartTacticalPathTraversal(const TArray<FVector>& PathPoints);
+    void BindToEventBus();
+	void UnbindFromEventBus();
+	void ApplyCameraModeInputState(ECameraMode CameraMode);
+	void StartTacticalPathTraversal(const TArray<FVector>& PathPoints, float PendingDistanceConsumption = 0.0f);
 	void UpdateTacticalPathTraversal(float DeltaTime);
 	void ClearTacticalPathTraversal(bool bStopPawnMovement);
 	void RotatePawnTowardDirection(APawn* ControlledPawn, const FVector& MoveDirection, float DeltaTime);
+ float CalculatePathDistance(const TArray<FVector>& PathPoints) const;
+	void DrawDebugTacticalPath(const TArray<FVector>& PathPoints, bool bIsValid) const;
+	UTacticalTurnSubsystem* GetTacticalTurnSubsystem() const;
+	void RefreshTacticalCombatHUD() const;
+	void SpawnTacticalCombatHUD();
+	void HandleTacticalPathTraversalCompleted();
 	UFUNCTION()
 	void HandleCameraModeChanged(const FCameraModeTransition& Transition);
+ void HandleGameEvent(const FString& EventName, const FString& Payload);
 	void UpdateTacticalRoamInput();
- void SetControlledPawnTacticalInputSuppressed(bool bSuppressInput);
+    void SetControlledPawnTacticalInputSuppressed(bool bSuppressInput);
 	void StopTacticalPrototypeMovement();
 	bool IsTacticalModeActive() const;
 
@@ -92,7 +110,7 @@ protected:
 
 	float TacticalMoveForwardInput = 0.0f;
 	float TacticalMoveRightInput = 0.0f;
- UPROPERTY(EditAnywhere, Category = "Input|Tactical", meta = (ClampMin = "1.0", Units = "cm"))
+  UPROPERTY(EditAnywhere, Category = "Input|Tactical", meta = (ClampMin = "1.0", Units = "cm"))
 	float TacticalAcceptanceRadius = 50.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Input|Tactical", meta = (ClampMin = "0.0"))
@@ -102,6 +120,7 @@ protected:
 	TArray<FVector> ActiveTacticalPathPoints;
 	int32 CurrentPathIndex = INDEX_NONE;
 	bool bIsTacticalRotateHeld = false;
+	float PendingPathDistanceConsumption = 0.0f;
 
 public:
 

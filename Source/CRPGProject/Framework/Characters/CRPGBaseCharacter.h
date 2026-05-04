@@ -7,6 +7,7 @@
 
 class UAbilitySystemComponent;
 class UCRPGAttributeSet;
+class UTacticalUnitComponent;
 
 UCLASS()
 class CRPGPROJECT_API ACRPGBaseCharacter : public ACharacter, public IAbilitySystemInterface
@@ -17,6 +18,10 @@ public:
 	ACRPGBaseCharacter();
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	UFUNCTION(BlueprintPure, Category = "Tactical")
+	UTacticalUnitComponent* GetTacticalUnitComponent() const;
 
 	//// Called every frame
 	//virtual void Tick(float DeltaTime) override;
@@ -32,4 +37,7 @@ protected:
 
 	UPROPERTY()
 	UCRPGAttributeSet* AttributeSet;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical")
+	UTacticalUnitComponent* TacticalUnitComponent;
 };

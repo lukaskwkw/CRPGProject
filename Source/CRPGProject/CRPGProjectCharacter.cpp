@@ -1,6 +1,8 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "CRPGProjectCharacter.h"
+#include "Camera/Subsystems/CameraModeSubsystem.h"
+#include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -12,11 +14,32 @@
 #include "InputActionValue.h"
 #include "CRPGProject.h"
 
+namespace
+{
+	bool IsExplorationCharacterInputAllowed(const ACRPGProjectCharacter* Character)
+	{
+		if (!Character)
+		{
+			return false;
+		}
+
+		if (const UGameInstance* GameInstance = Character->GetGameInstance())
+		{
+			if (const UCameraModeSubsystem* CameraModeSubsystem = GameInstance->GetSubsystem<UCameraModeSubsystem>())
+			{
+				return CameraModeSubsystem->GetCurrentCameraMode() != ECameraMode::Tactical;
+			}
+		}
+
+		return true;
+	}
+}
+
 ACRPGProjectCharacter::ACRPGProjectCharacter()
 {
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
-		
+
 	// Don't rotate when the controller rotates. Let that just affect the camera.
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
@@ -47,18 +70,26 @@ ACRPGProjectCharacter::ACRPGProjectCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
-	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
+	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character)
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
 }
 
-void ACRPGProjectCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+void ACRPGProjectCharacter::BeginPlay()
 {
+	Super::BeginPlay();
+}
+
+void ACRPGProjectCharacter::SetupPlayerInputComponent(UInputComponent *PlayerInputComponent)
+{
+	Super::SetupPlayerInputComponent(PlayerInputComponent);
+
 	// Set up action bindings
-	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent)) {
-		
+	if (UEnhancedInputComponent *EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
+	{
+
 		// Jumping
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACRPGProjectCharacter::DoJumpStart);
+		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACRPGProjectCharacter::DoJumpEnd);
 
 		// Moving
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ACRPGProjectCharacter::Move);
@@ -73,7 +104,7 @@ void ACRPGProjectCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	}
 }
 
-void ACRPGProjectCharacter::Move(const FInputActionValue& Value)
+void ACRPGProjectCharacter::Move(const FInputActionValue &Value)
 {
 	// input is a Vector2D
 	FVector2D MovementVector = Value.Get<FVector2D>();
@@ -82,7 +113,7 @@ void ACRPGProjectCharacter::Move(const FInputActionValue& Value)
 	DoMove(MovementVector.X, MovementVector.Y);
 }
 
-void ACRPGProjectCharacter::Look(const FInputActionValue& Value)
+void ACRPGProjectCharacter::Look(const FInputActionValue &Value)
 {
 	// input is a Vector2D
 	FVector2D LookAxisVector = Value.Get<FVector2D>();
@@ -93,6 +124,11 @@ void ACRPGProjectCharacter::Look(const FInputActionValue& Value)
 
 void ACRPGProjectCharacter::DoMove(float Right, float Forward)
 {
+ if (!IsExplorationCharacterInputAllowed(this))
+	{
+		return;
+	}
+
 	if (GetController() != nullptr)
 	{
 		// find out which way is forward
@@ -102,10 +138,10 @@ void ACRPGProjectCharacter::DoMove(float Right, float Forward)
 		// get forward vector
 		const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 
-		// get right vector 
+		// get right vector
 		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
-		// add movement 
+		// add movement
 		AddMovementInput(ForwardDirection, Forward);
 		AddMovementInput(RightDirection, Right);
 	}
@@ -113,6 +149,11 @@ void ACRPGProjectCharacter::DoMove(float Right, float Forward)
 
 void ACRPGProjectCharacter::DoLook(float Yaw, float Pitch)
 {
+ if (!IsExplorationCharacterInputAllowed(this))
+	{
+		return;
+	}
+
 	if (GetController() != nullptr)
 	{
 		// add yaw and pitch input to controller
@@ -123,12 +164,22 @@ void ACRPGProjectCharacter::DoLook(float Yaw, float Pitch)
 
 void ACRPGProjectCharacter::DoJumpStart()
 {
+ if (!IsExplorationCharacterInputAllowed(this))
+	{
+		return;
+	}
+
 	// signal the character to jump
 	Jump();
 }
 
 void ACRPGProjectCharacter::DoJumpEnd()
 {
+ if (!IsExplorationCharacterInputAllowed(this))
+	{
+		return;
+	}
+
 	// signal the character to stop jumping
 	StopJumping();
 }

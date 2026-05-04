@@ -33,6 +33,10 @@ When modifying Unreal Engine classes:
 - Verify overridden engine methods are not final.
 - Include concrete headers for any engine component types used directly.
 
+### 2.3 Character Architecture Refactoring
+
+Character architecture refactors should be minimal and surgical. Unify the playable pawn by inheriting `ACRPGProjectCharacter` from `ACRPGBaseCharacter` while preserving existing camera, movement, jump, Enhanced Input, and blueprint compatibility. Avoid redesigns or new class splits.
+
 ---
 
 ## 3. Event-Driven Design (MANDATORY)
@@ -189,8 +193,4 @@ Always organize new classes by bounded gameplay domain:
 * Data/*
 * Utilities/*
 
-Subsystems must live inside their owning domain's Subsystems folder.
-Components must live inside their owning domain's Components folder.
-Controllers must live inside Framework/Controllers.
-Base gameplay characters must live inside Framework/Characters.
-Combat GAS classes must live inside Combat/*.
+Subsystems must live inside their owning domain's Subsystems folder. Components must live inside their owning domain's Components folder. Controllers must live inside Framework/Controllers. Base gameplay characters must live inside Framework/Characters. Combat GAS classes must live inside Combat/*.

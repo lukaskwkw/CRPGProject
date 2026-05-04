@@ -1,12 +1,16 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
+#include "CRPGProjectPlayerController.h"
+
 #include "CameraControllerComponent.h"
 #include "CameraModeSubsystem.h"
-#include "CRPGProjectPlayerController.h"
+#include "DrawDebugHelpers.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+#include "Events/Subsystems/EventBusSubsystem.h"
+#include "Framework/Characters/CRPGBaseCharacter.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "InputMappingContext.h"
@@ -15,7 +19,25 @@
 #include "NavigationSystem.h"
 #include "Blueprint/UserWidget.h"
 #include "CRPGProject.h"
+#include "Tactical/Components/TacticalUnitComponent.h"
+#include "Tactical/Subsystems/TacticalTurnSubsystem.h"
+#include "UI/HUD/TacticalCombatHUDWidget.h"
 #include "Widgets/Input/SVirtualJoystick.h"
+
+namespace TacticalCombatEvents
+{
+	static const FString TacticalTurnStarted = TEXT("tactical_turn_started");
+	static const FString TacticalTurnEnded = TEXT("tactical_turn_ended");
+	static const FString TacticalRoundStarted = TEXT("tactical_round_started");
+	static const FString TacticalUnitMovementConsumed = TEXT("tactical_unit_movement_consumed");
+}
+
+namespace
+{
+	constexpr float TacticalPathDebugDuration = 2.0f;
+	constexpr float TacticalPathDebugSphereRadius = 18.0f;
+	constexpr float TacticalPathDebugLineThickness = 3.0f;
+}
 
 ACRPGProjectPlayerController::ACRPGProjectPlayerController()
 {
@@ -27,8 +49,11 @@ void ACRPGProjectPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 	BindToCameraModeSubsystem();
+   BindToEventBus();
 	SetControlledPawnTacticalInputSuppressed(IsTacticalModeActive());
 	ApplyCameraModeInputState(IsTacticalModeActive() ? ECameraMode::Tactical : ECameraMode::Exploration);
+	SpawnTacticalCombatHUD();
+	RefreshTacticalCombatHUD();
 
 	// only spawn touch controls on local player controllers
 	if (ShouldUseTouchControls() && IsLocalPlayerController())
@@ -52,6 +77,7 @@ void ACRPGProjectPlayerController::BeginPlay()
 void ACRPGProjectPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ClearTacticalPathTraversal(true);
+    UnbindFromEventBus();
 	UnbindFromCameraModeSubsystem();
 	SetControlledPawnTacticalInputSuppressed(false);
 	Super::EndPlay(EndPlayReason);
@@ -309,8 +335,30 @@ void ACRPGProjectPlayerController::HandleTacticalLeftClick()
 		return;
 	}
 
+ const float PathDistance = CalculatePathDistance(NavigationPath->PathPoints);
+	if (UTacticalTurnSubsystem* TacticalTurnSubsystem = GetTacticalTurnSubsystem())
+	{
+		if (TacticalTurnSubsystem->IsTurnModeActive())
+		{
+			const ACRPGBaseCharacter* ActiveUnit = TacticalTurnSubsystem->GetActiveUnit();
+			const UTacticalUnitComponent* TacticalUnitComponent = ActiveUnit ? ActiveUnit->GetTacticalUnitComponent() : nullptr;
+
+			if (!TacticalUnitComponent || !TacticalUnitComponent->HasMovementBudget(PathDistance))
+			{
+				DrawDebugTacticalPath(NavigationPath->PathPoints, false);
+				ClearTacticalPathTraversal(true);
+				RefreshTacticalCombatHUD();
+				return;
+			}
+
+			DrawDebugTacticalPath(NavigationPath->PathPoints, true);
+			StartTacticalPathTraversal(NavigationPath->PathPoints, PathDistance);
+			return;
+		}
+	}
+
 	UE_LOG(LogCRPGProject, Verbose, TEXT("[TacticalMove] Path point count: %d"), NavigationPath->PathPoints.Num());
-	StartTacticalPathTraversal(NavigationPath->PathPoints);
+ StartTacticalPathTraversal(NavigationPath->PathPoints);
 }
 
 void ACRPGProjectPlayerController::BindToCameraModeSubsystem()
@@ -326,6 +374,34 @@ void ACRPGProjectPlayerController::BindToCameraModeSubsystem()
 		{
 			Subsystem->OnCameraModeChanged.RemoveAll(this);
 			Subsystem->OnCameraModeChanged.AddDynamic(this, &ACRPGProjectPlayerController::HandleCameraModeChanged);
+		}
+	}
+	}
+
+void ACRPGProjectPlayerController::BindToEventBus()
+{
+	if (!IsLocalPlayerController())
+	{
+		return;
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UEventBusSubsystem* EventBusSubsystem = GameInstance->GetSubsystem<UEventBusSubsystem>())
+		{
+			EventBusSubsystem->OnNamedGameEvent.RemoveAll(this);
+			EventBusSubsystem->OnNamedGameEvent.AddUObject(this, &ACRPGProjectPlayerController::HandleGameEvent);
+		}
+	}
+}
+
+void ACRPGProjectPlayerController::UnbindFromEventBus()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UEventBusSubsystem* EventBusSubsystem = GameInstance->GetSubsystem<UEventBusSubsystem>())
+		{
+			EventBusSubsystem->OnNamedGameEvent.RemoveAll(this);
 		}
 	}
 }
@@ -361,11 +437,12 @@ void ACRPGProjectPlayerController::ApplyCameraModeInputState(ECameraMode CameraM
 	SetInputMode(FInputModeGameOnly());
 }
 
-void ACRPGProjectPlayerController::StartTacticalPathTraversal(const TArray<FVector> &PathPoints)
+void ACRPGProjectPlayerController::StartTacticalPathTraversal(const TArray<FVector> &PathPoints, float PendingDistanceConsumption)
 {
 	ActiveTacticalPathPoints = PathPoints;
 	bHasActiveTacticalPath = ActiveTacticalPathPoints.Num() > 0;
 	CurrentPathIndex = ActiveTacticalPathPoints.Num() > 1 ? 1 : 0;
+	PendingPathDistanceConsumption = FMath::Max(0.0f, PendingDistanceConsumption);
 
 	UE_LOG(LogCRPGProject, Verbose, TEXT("[TacticalMove] Path traversal started. Active points: %d, starting index: %d"), ActiveTacticalPathPoints.Num(), CurrentPathIndex);
 }
@@ -397,6 +474,7 @@ void ACRPGProjectPlayerController::UpdateTacticalPathTraversal(float DeltaTime)
 		if (!ActiveTacticalPathPoints.IsValidIndex(CurrentPathIndex))
 		{
 			UE_LOG(LogCRPGProject, Verbose, TEXT("[TacticalMove] Tactical traversal completed"));
+           HandleTacticalPathTraversalCompleted();
 			ClearTacticalPathTraversal(true);
 		}
 
@@ -413,6 +491,7 @@ void ACRPGProjectPlayerController::ClearTacticalPathTraversal(bool bStopPawnMove
 	bHasActiveTacticalPath = false;
 	ActiveTacticalPathPoints.Reset();
 	CurrentPathIndex = INDEX_NONE;
+	PendingPathDistanceConsumption = 0.0f;
 
 	if (bStopPawnMovement)
 	{
@@ -432,11 +511,115 @@ void ACRPGProjectPlayerController::RotatePawnTowardDirection(APawn *ControlledPa
 	ControlledPawn->SetActorRotation(NewRotation);
 }
 
+float ACRPGProjectPlayerController::CalculatePathDistance(const TArray<FVector>& PathPoints) const
+{
+	float TotalDistance = 0.0f;
+
+	for (int32 PointIndex = 1; PointIndex < PathPoints.Num(); ++PointIndex)
+	{
+		TotalDistance += FVector::Distance(PathPoints[PointIndex - 1], PathPoints[PointIndex]);
+	}
+
+	return TotalDistance;
+}
+
+void ACRPGProjectPlayerController::DrawDebugTacticalPath(const TArray<FVector>& PathPoints, bool bIsValid) const
+{
+	if (!GetWorld() || PathPoints.Num() == 0)
+	{
+		return;
+	}
+
+    const FColor PathColor = bIsValid ? FColor::Green : FColor::Red;
+
+	for (int32 PointIndex = 0; PointIndex < PathPoints.Num(); ++PointIndex)
+	{
+      DrawDebugSphere(GetWorld(), PathPoints[PointIndex], TacticalPathDebugSphereRadius, 8, PathColor, false, TacticalPathDebugDuration);
+
+		if (PointIndex > 0)
+		{
+           DrawDebugLine(GetWorld(), PathPoints[PointIndex - 1], PathPoints[PointIndex], PathColor, false, TacticalPathDebugDuration, 0, TacticalPathDebugLineThickness);
+		}
+	}
+}
+
+UTacticalTurnSubsystem* ACRPGProjectPlayerController::GetTacticalTurnSubsystem() const
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		return GameInstance->GetSubsystem<UTacticalTurnSubsystem>();
+	}
+
+	return nullptr;
+}
+
+void ACRPGProjectPlayerController::RefreshTacticalCombatHUD() const
+{
+	if (TacticalCombatHUDWidget)
+	{
+		TacticalCombatHUDWidget->RefreshFromSubsystem();
+	}
+}
+
+void ACRPGProjectPlayerController::SpawnTacticalCombatHUD()
+{
+	if (!IsLocalPlayerController() || TacticalCombatHUDWidget || !TacticalCombatHUDWidgetClass)
+	{
+		return;
+	}
+
+	TacticalCombatHUDWidget = CreateWidget<UTacticalCombatHUDWidget>(this, TacticalCombatHUDWidgetClass);
+	if (TacticalCombatHUDWidget)
+	{
+		TacticalCombatHUDWidget->AddToPlayerScreen(1);
+	}
+}
+
+void ACRPGProjectPlayerController::HandleTacticalPathTraversalCompleted()
+{
+	if (PendingPathDistanceConsumption <= 0.0f)
+	{
+		return;
+	}
+
+	if (UTacticalTurnSubsystem* TacticalTurnSubsystem = GetTacticalTurnSubsystem())
+	{
+		if (TacticalTurnSubsystem->IsTurnModeActive())
+		{
+			if (ACRPGBaseCharacter* ActiveUnit = TacticalTurnSubsystem->GetActiveUnit())
+			{
+				if (UTacticalUnitComponent* TacticalUnitComponent = ActiveUnit->GetTacticalUnitComponent())
+				{
+					TacticalUnitComponent->ConsumeMovement(PendingPathDistanceConsumption);
+
+					if (UGameInstance* GameInstance = GetGameInstance())
+					{
+						if (UEventBusSubsystem* EventBusSubsystem = GameInstance->GetSubsystem<UEventBusSubsystem>())
+						{
+							EventBusSubsystem->PublishEvent(
+								TacticalCombatEvents::TacticalUnitMovementConsumed,
+								FString::Printf(
+									TEXT("unit=%s;distance_cm=%.2f;remaining_cm=%.2f;round=%d"),
+									*ActiveUnit->GetName(),
+									PendingPathDistanceConsumption,
+									TacticalUnitComponent->GetRemainingMovementRange(),
+									TacticalTurnSubsystem->GetCurrentRound()));
+						}
+					}
+				}
+			}
+		}
+	}
+
+	RefreshTacticalCombatHUD();
+}
+
 void ACRPGProjectPlayerController::HandleCameraModeChanged(const FCameraModeTransition &Transition)
 {
 	bIsTacticalRotateHeld = false;
 	ApplyCameraModeInputState(Transition.NewMode);
 	SetControlledPawnTacticalInputSuppressed(Transition.NewMode == ECameraMode::Tactical);
+	RefreshTacticalCombatHUD();
 
 	if (Transition.NewMode == ECameraMode::Tactical)
 	{
@@ -456,6 +639,17 @@ void ACRPGProjectPlayerController::HandleCameraModeChanged(const FCameraModeTran
 		{
 			CameraControllerComponent->ClearTacticalRoamInput();
 		}
+	}
+	}
+
+void ACRPGProjectPlayerController::HandleGameEvent(const FString& EventName, const FString& Payload)
+{
+	if (EventName == TacticalCombatEvents::TacticalTurnStarted
+		|| EventName == TacticalCombatEvents::TacticalTurnEnded
+		|| EventName == TacticalCombatEvents::TacticalRoundStarted
+		|| EventName == TacticalCombatEvents::TacticalUnitMovementConsumed)
+	{
+		RefreshTacticalCombatHUD();
 	}
 }
 
@@ -478,15 +672,12 @@ void ACRPGProjectPlayerController::UpdateTacticalRoamInput()
 
 void ACRPGProjectPlayerController::SetControlledPawnTacticalInputSuppressed(bool bSuppressInput)
 {
-	if (APawn *ControlledPawn = GetPawn())
+	if (bSuppressInput)
 	{
-		if (bSuppressInput)
+     if (ACharacter *ControlledCharacter = Cast<ACharacter>(GetPawn()))
 		{
-			ControlledPawn->DisableInput(this);
-		}
-		else
-		{
-			ControlledPawn->EnableInput(this);
+         ControlledCharacter->StopJumping();
+			ControlledCharacter->GetCharacterMovement()->StopMovementImmediately();
 		}
 	}
 }
