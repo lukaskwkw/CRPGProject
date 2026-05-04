@@ -2,7 +2,12 @@
 
 ## 1. Project Context
 
-This is a **turn-based DND CRPG built in Unreal Engine 5** with a hybrid architecture:
+This is a **DnD-inspired CRPG built in Unreal Engine 5** with a hybrid gameplay foundation:
+
+- real-time exploration with direct player control
+- seamless camera mode switching, including isometric/top-down presentation
+- a separate optional turn mode that is distinct from camera mode
+- turn mode may be entered by user demand now and by combat flow later
 
 - C++ = core systems + runtime logic
 - GAS (Gameplay Ability System) = combat, stats, status effects
@@ -184,15 +189,15 @@ Never place new gameplay classes in Source/CRPGProject root.
 
 Always organize new classes by bounded gameplay domain:
 
-* Core/*
-* Framework/*
-* Camera/*
-* Tactical/*
-* Combat/*
-* UI/*
-* Events/*
-* World/*
-* Data/*
-* Utilities/*
+- Core/\*
+- Framework/\*
+- Camera/\*
+- Tactical/\*
+- Combat/\*
+- UI/\*
+- Events/\*
+- World/\*
+- Data/\*
+- Utilities/\*
 
-Subsystems must live inside their owning domain's Subsystems folder. Components must live inside their owning domain's Components folder. Controllers must live inside Framework/Controllers. Base gameplay characters must live inside Framework/Characters. Combat GAS classes must live inside Combat/*.
+Subsystems must live inside their owning domain's Subsystems folder. Components must live inside their owning domain's Components folder. Controllers must live inside Framework/Controllers. Base gameplay characters must live inside Framework/Characters. Combat GAS classes must live inside Combat/\*.

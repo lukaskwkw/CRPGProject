@@ -6,14 +6,20 @@
 
 Projekt nie jest zwykłym action RPG.
 
-Docelowy kierunek:
+Current implemented gameplay foundation:
 
 > **Single-character DnD-inspired CRPG with seamless hybrid camera**
 >
 > - exploration in third person real-time
-> - tactical top-down planning mode
+> - player-controlled camera switching, including isometric/top-down view
 > - optional paused turn-based combat
 > - systemic DnD combat rules
+>
+> Current baseline is hybrid exploration plus a separate turn mode.
+> Tactical planning as a broader dedicated mode remains future-facing / experimental.
+
+Long-term direction:
+
 > - later: companions, abilities, reactions, dialogue, world systems
 
 Inspiracje gameplay loop:
