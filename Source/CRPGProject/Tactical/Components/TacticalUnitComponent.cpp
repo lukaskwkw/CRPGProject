@@ -7,10 +7,32 @@ UTacticalUnitComponent::UTacticalUnitComponent()
 
 void UTacticalUnitComponent::ResetForNewRound()
 {
+    ResetEncounterTurnState();
     RemainingMovementRangeCm = MaxMovementRangeCm;
     ActionPoints = 1;
     BonusActionPoints = 1;
     bTurnConsumed = false;
+}
+
+bool UTacticalUnitComponent::IsEnemyTo(const UTacticalUnitComponent *OtherUnit) const
+{
+    return OtherUnit != nullptr && OtherUnit != this && TeamId != OtherUnit->TeamId;
+}
+
+void UTacticalUnitComponent::MarkDead()
+{
+    bIsAlive = false;
+    bTurnCompleted = true;
+}
+
+void UTacticalUnitComponent::SetInitiative(int32 InValue)
+{
+    CurrentInitiative = InValue;
+}
+
+void UTacticalUnitComponent::ResetEncounterTurnState()
+{
+    bTurnCompleted = !bIsAlive;
 }
 
 void UTacticalUnitComponent::ConsumeMovement(float Amount)
