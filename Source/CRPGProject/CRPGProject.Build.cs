@@ -1,5 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
+using System.IO;
 using UnrealBuildTool;
 
 public class CRPGProject : ModuleRules
@@ -15,11 +16,11 @@ public class CRPGProject : ModuleRules
 			"InputCore",
 			"EnhancedInput",
 			"AIModule",
-          "NavigationSystem",
+		  "NavigationSystem",
 			"StateTreeModule",
-            "GameplayTasks",
-            "GameplayAbilities",
-            "GameplayTags",
+			"GameplayTasks",
+			"GameplayAbilities",
+			"GameplayTags",
 			"GameplayStateTreeModule",
 			"UMG",
 			"Slate"
@@ -27,9 +28,9 @@ public class CRPGProject : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
-		PublicIncludePaths.AddRange(new string[] {
+		AddExistingPublicIncludePaths(new string[] {
 			"CRPGProject",
-          "CRPGProject/Core",
+		  "CRPGProject/Core",
 			"CRPGProject/Core/Logging",
 			"CRPGProject/Framework",
 			"CRPGProject/Framework/Controllers",
@@ -100,5 +101,17 @@ public class CRPGProject : ModuleRules
 		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
 
 		// To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
+	}
+
+	private void AddExistingPublicIncludePaths(string[] RelativePaths)
+	{
+		foreach (string RelativePath in RelativePaths)
+		{
+			string FullPath = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", RelativePath));
+			if (Directory.Exists(FullPath))
+			{
+				PublicIncludePaths.Add(RelativePath);
+			}
+		}
 	}
 }
