@@ -277,10 +277,20 @@ void UCameraControllerComponent::EnterTacticalMode(const FCameraModeTransition& 
 
     EnsureTacticalCamera();
     RecenterOnActivePawn();
-    TacticalYaw = TacticalSettings.Rotation.Yaw;
+    TacticalYaw = FRotator::NormalizeAxis(OwningPlayerController->GetControlRotation().Yaw);
+    TacticalSettings.Rotation.Yaw = TacticalYaw;
+    TacticalAnchorLocation = TargetTacticalAnchorLocation;
+    bHasTacticalAnchor = true;
 
     if (TacticalCameraActor)
     {
+        const FVector DesiredCameraLocation = TacticalAnchorLocation
+            - TacticalSettings.Rotation.Vector() * TacticalSettings.ArmLength
+            + TacticalSettings.TargetOffset
+            + TacticalSettings.SocketOffset;
+
+        TacticalCameraActor->SetActorLocationAndRotation(DesiredCameraLocation, TacticalSettings.Rotation);
+        TacticalCameraActor->GetCameraComponent()->SetFieldOfView(TacticalSettings.FieldOfView);
         OwningPlayerController->SetViewTargetWithBlend(TacticalCameraActor, Transition.BlendTime);
     }
 }
@@ -357,18 +367,6 @@ void UCameraControllerComponent::UpdateTacticalCamera(float DeltaTime)
     TacticalCameraActor->SetActorLocationAndRotation(NewCameraLocation, NewCameraRotation);
     TacticalCameraActor->GetCameraComponent()->SetFieldOfView(FMath::FInterpTo(TacticalCameraActor->GetCameraComponent()->FieldOfView, Settings.FieldOfView, DeltaTime, InterpSpeed));
 
-    USpringArmComponent* SpringArm = FindControlledSpringArm();
-    UCameraComponent* Camera = FindControlledCamera();
-    if (SpringArm && Camera)
-    {
-        SpringArm->TargetArmLength = FMath::FInterpTo(SpringArm->TargetArmLength, Settings.ArmLength, DeltaTime, InterpSpeed);
-        SpringArm->TargetOffset = FMath::VInterpTo(SpringArm->TargetOffset, Settings.TargetOffset, DeltaTime, InterpSpeed);
-        SpringArm->SocketOffset = FMath::VInterpTo(SpringArm->SocketOffset, Settings.SocketOffset, DeltaTime, InterpSpeed);
-        SpringArm->bUsePawnControlRotation = false;
-        Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView, Settings.FieldOfView, DeltaTime, InterpSpeed));
-    }
-
-    OwningPlayerController->SetControlRotation(FMath::RInterpTo(OwningPlayerController->GetControlRotation(), Settings.Rotation, DeltaTime, InterpSpeed));
 }
 
 const FCameraModeViewSettings& UCameraControllerComponent::GetModeViewSettings(ECameraMode CameraMode) const
