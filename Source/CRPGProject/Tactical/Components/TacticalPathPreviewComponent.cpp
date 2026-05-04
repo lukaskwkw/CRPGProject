@@ -3,12 +3,6 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 
-namespace
-{
-    constexpr float TacticalPathDebugSphereRadius = 4.0f;
-    constexpr float TacticalPathDebugLineThickness = 1.0f;
-}
-
 UTacticalPathPreviewComponent::UTacticalPathPreviewComponent()
 {
     PrimaryComponentTick.bCanEverTick = true;
@@ -27,8 +21,10 @@ void UTacticalPathPreviewComponent::TickComponent(float DeltaTime, ELevelTick Ti
     float TraversedDistanceCm = 0.0f;
 
     const FVector PathOffset(0.0f, 0.0f, PathDebugVerticalOffset);
+    const FColor ValidDebugColor = ValidPathColor.ToFColor(true);
+    const FColor InvalidDebugColor = InvalidPathColor.ToFColor(true);
 
-    DrawDebugSphere(GetWorld(), CachedPathPoints[0] + PathOffset, TacticalPathDebugSphereRadius, 8, CachedAffordableDistanceCm > 0.0f ? FColor::Green : FColor::Red, false, 0.0f);
+  DrawDebugSphere(GetWorld(), CachedPathPoints[0] + PathOffset, PathDebugSphereRadius, PathDebugSphereSegments, CachedAffordableDistanceCm > 0.0f ? ValidDebugColor : InvalidDebugColor, false, 0.0f);
 
     for (int32 PointIndex = 1; PointIndex < CachedPathPoints.Num(); ++PointIndex)
     {
@@ -39,13 +35,13 @@ void UTacticalPathPreviewComponent::TickComponent(float DeltaTime, ELevelTick Ti
 
         if (SegmentEndDistanceCm <= CachedAffordableDistanceCm + KINDA_SMALL_NUMBER)
         {
-            DrawPathSegment(SegmentStart, SegmentEnd, FColor::Green);
-            DrawDebugSphere(GetWorld(), SegmentEnd + PathOffset, TacticalPathDebugSphereRadius, 8, FColor::Green, false, 0.0f);
+           DrawPathSegment(SegmentStart, SegmentEnd, ValidDebugColor);
+            DrawDebugSphere(GetWorld(), SegmentEnd + PathOffset, PathDebugSphereRadius, PathDebugSphereSegments, ValidDebugColor, false, 0.0f);
         }
         else if (TraversedDistanceCm >= CachedAffordableDistanceCm - KINDA_SMALL_NUMBER)
         {
-            DrawPathSegment(SegmentStart, SegmentEnd, FColor::Red);
-            DrawDebugSphere(GetWorld(), SegmentEnd + PathOffset, TacticalPathDebugSphereRadius, 8, FColor::Red, false, 0.0f);
+         DrawPathSegment(SegmentStart, SegmentEnd, InvalidDebugColor);
+            DrawDebugSphere(GetWorld(), SegmentEnd + PathOffset, PathDebugSphereRadius, PathDebugSphereSegments, InvalidDebugColor, false, 0.0f);
         }
         else
         {
@@ -53,10 +49,10 @@ void UTacticalPathPreviewComponent::TickComponent(float DeltaTime, ELevelTick Ti
             const float Alpha = SegmentDistanceCm > KINDA_SMALL_NUMBER ? RemainingAffordableDistanceCm / SegmentDistanceCm : 0.0f;
             const FVector BreakPoint = FMath::Lerp(SegmentStart, SegmentEnd, FMath::Clamp(Alpha, 0.0f, 1.0f));
 
-            DrawPathSegment(SegmentStart, BreakPoint, FColor::Green);
-            DrawDebugSphere(GetWorld(), BreakPoint + PathOffset, TacticalPathDebugSphereRadius, 8, FColor::Red, false, 0.0f);
-            DrawPathSegment(BreakPoint, SegmentEnd, FColor::Red);
-            DrawDebugSphere(GetWorld(), SegmentEnd + PathOffset, TacticalPathDebugSphereRadius, 8, FColor::Red, false, 0.0f);
+           DrawPathSegment(SegmentStart, BreakPoint, ValidDebugColor);
+            DrawDebugSphere(GetWorld(), BreakPoint + PathOffset, PathDebugSphereRadius, PathDebugSphereSegments, InvalidDebugColor, false, 0.0f);
+            DrawPathSegment(BreakPoint, SegmentEnd, InvalidDebugColor);
+            DrawDebugSphere(GetWorld(), SegmentEnd + PathOffset, PathDebugSphereRadius, PathDebugSphereSegments, InvalidDebugColor, false, 0.0f);
         }
 
         TraversedDistanceCm = SegmentEndDistanceCm;
@@ -85,5 +81,5 @@ void UTacticalPathPreviewComponent::DrawPathSegment(const FVector &SegmentStart,
     }
 
     const FVector PathOffset(0.0f, 0.0f, PathDebugVerticalOffset);
-    DrawDebugLine(GetWorld(), SegmentStart + PathOffset, SegmentEnd + PathOffset, SegmentColor, false, 0.0f, 0, TacticalPathDebugLineThickness);
+    DrawDebugLine(GetWorld(), SegmentStart + PathOffset, SegmentEnd + PathOffset, SegmentColor, false, 0.0f, 0, PathDebugLineThickness);
 }

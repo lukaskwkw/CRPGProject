@@ -128,6 +128,9 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Input|Tactical", meta = (ClampMin = "1.0", Units = "cm"))
 	float TacticalAcceptanceRadius = 50.0f;
 
+	UPROPERTY(EditAnywhere, Category = "Input|Tactical", meta = (ClampMin = "1.0", Units = "cm"))
+	float TacticalFinalAcceptanceRadius = 10.0f;
+
 	UPROPERTY(EditAnywhere, Category = "Input|Tactical", meta = (ClampMin = "0.0"))
 	float TacticalPathRotationInterpSpeed = 10.0f;
 
@@ -136,6 +139,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Input|Tactical", meta = (ClampMin = "0.01", Units = "s"))
 	float TacticalHoverPreviewRefreshInterval = 0.2f;
+
+	UPROPERTY(EditAnywhere, Category = "Input|Tactical", meta = (ClampMin = "0.0", Units = "cm"))
+	float TacticalMinimumCommittedMoveDistance = 5.0f;
 
 	bool bHasActiveTacticalPath = false;
 	TArray<FVector> ActiveTacticalPathPoints;

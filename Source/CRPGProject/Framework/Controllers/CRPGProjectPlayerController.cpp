@@ -482,6 +482,12 @@ void ACRPGProjectPlayerController::CommitPendingTacticalMove()
 		return;
 	}
 
+	if (PendingMovePreview.AffordablePathDistanceCm <= TacticalMinimumCommittedMoveDistance)
+	{
+		ClearPendingTacticalMovePreview();
+		return;
+	}
+
 	const TArray<FVector> PathPoints = PendingMovePreview.AffordablePathPoints;
 	const float PathDistanceCm = PendingMovePreview.AffordablePathDistanceCm;
 
@@ -733,8 +739,10 @@ void ACRPGProjectPlayerController::UpdateTacticalPathTraversal(float DeltaTime)
 	const FVector TargetPoint = ActiveTacticalPathPoints[CurrentPathIndex];
 	FVector ToTarget = TargetPoint - PawnLocation;
 	ToTarget.Z = 0.0f;
+	const bool bIsFinalPathPoint = CurrentPathIndex == ActiveTacticalPathPoints.Num() - 1;
+	const float CurrentAcceptanceRadius = bIsFinalPathPoint ? FMath::Min(TacticalAcceptanceRadius, TacticalFinalAcceptanceRadius) : TacticalAcceptanceRadius;
 
-	if (ToTarget.SizeSquared() <= FMath::Square(TacticalAcceptanceRadius))
+  if (ToTarget.SizeSquared() <= FMath::Square(CurrentAcceptanceRadius))
 	{
 		UE_LOG(LogCRPGProject, Verbose, TEXT("[TacticalMove] Reached path node %d at %s"), CurrentPathIndex, *TargetPoint.ToString());
 		++CurrentPathIndex;
@@ -827,7 +835,8 @@ void ACRPGProjectPlayerController::SpawnTacticalCombatHUD()
 
 void ACRPGProjectPlayerController::HandleTacticalPathTraversalCompleted()
 {
-	if (PendingPathDistanceConsumption <= 0.0f)
+ const float ConsumedDistanceCm = FMath::Min(PendingPathDistanceConsumption, ActiveTraversalTravelledDistanceCm);
+	if (ConsumedDistanceCm <= TacticalMinimumCommittedMoveDistance)
 	{
 		return;
 	}
@@ -840,7 +849,7 @@ void ACRPGProjectPlayerController::HandleTacticalPathTraversalCompleted()
 			{
 				if (UTacticalUnitComponent *TacticalUnitComponent = ActiveUnit->GetTacticalUnitComponent())
 				{
-					TacticalUnitComponent->ConsumeMovement(PendingPathDistanceConsumption);
+                 TacticalUnitComponent->ConsumeMovement(ConsumedDistanceCm);
 
 					if (UGameInstance *GameInstance = GetGameInstance())
 					{
@@ -851,7 +860,7 @@ void ACRPGProjectPlayerController::HandleTacticalPathTraversalCompleted()
 								FString::Printf(
 									TEXT("unit=%s;distance_cm=%.2f;remaining_cm=%.2f;round=%d"),
 									*ActiveUnit->GetName(),
-									PendingPathDistanceConsumption,
+                                 ConsumedDistanceCm,
 									TacticalUnitComponent->GetRemainingMovementRange(),
 									TacticalTurnSubsystem->GetCurrentRound()));
 						}
