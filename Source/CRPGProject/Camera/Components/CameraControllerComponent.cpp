@@ -5,9 +5,11 @@
 #include "Camera/CameraComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "Framework/Characters/CRPGBaseCharacter.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Tactical/Subsystems/TacticalTurnSubsystem.h"
 
 UCameraControllerComponent::UCameraControllerComponent()
 {
@@ -52,7 +54,7 @@ void UCameraControllerComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
     Super::EndPlay(EndPlayReason);
 }
 
-void UCameraControllerComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+void UCameraControllerComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction)
 {
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
@@ -79,7 +81,7 @@ void UCameraControllerComponent::TickComponent(float DeltaTime, ELevelTick TickT
     }
 }
 
-void UCameraControllerComponent::AddTacticalRoamInput(const FVector2D& InputAxis)
+void UCameraControllerComponent::AddTacticalRoamInput(const FVector2D &InputAxis)
 {
     TacticalRoamInput = InputAxis;
 }
@@ -91,7 +93,7 @@ void UCameraControllerComponent::ClearTacticalRoamInput()
 
 void UCameraControllerComponent::RecenterOnActivePawn()
 {
-    if (APawn* Pawn = GetControlledPawn())
+    if (APawn *Pawn = ActiveCameraMode == ECameraMode::Tactical ? GetTacticalFocusPawn() : GetControlledPawn())
     {
         const FVector FocusLocation = GetPawnFocusLocation(Pawn);
         TargetTacticalAnchorLocation = FocusLocation;
@@ -135,7 +137,7 @@ ECameraMode UCameraControllerComponent::GetActiveCameraMode() const
     return ActiveCameraMode;
 }
 
-void UCameraControllerComponent::HandleCameraModeChanged(const FCameraModeTransition& Transition)
+void UCameraControllerComponent::HandleCameraModeChanged(const FCameraModeTransition &Transition)
 {
     ActiveTransition = Transition;
     ActiveCameraMode = Transition.NewMode;
@@ -160,8 +162,8 @@ void UCameraControllerComponent::HandleCameraModeChanged(const FCameraModeTransi
 void UCameraControllerComponent::UpdateTacticalPitchFromZoom()
 {
     const float ZoomAlpha = TacticalMaximumArmLength > TacticalMinimumArmLength
-        ? FMath::GetRangePct(TacticalMinimumArmLength, TacticalMaximumArmLength, TacticalSettings.ArmLength)
-        : 0.0f;
+                                ? FMath::GetRangePct(TacticalMinimumArmLength, TacticalMaximumArmLength, TacticalSettings.ArmLength)
+                                : 0.0f;
 
     TacticalSettings.Rotation.Pitch = FMath::Lerp(TacticalClosestPitch, TacticalFarthestPitch, ZoomAlpha);
 }
@@ -187,7 +189,7 @@ void UCameraControllerComponent::BindToCameraModeSubsystem()
         return;
     }
 
-    UGameInstance* GameInstance = OwningPlayerController->GetGameInstance();
+    UGameInstance *GameInstance = OwningPlayerController->GetGameInstance();
     if (!GameInstance)
     {
         return;
@@ -230,28 +232,35 @@ void UCameraControllerComponent::EnsureTacticalCamera()
 
 void UCameraControllerComponent::HandleControlledPawnChanged()
 {
-    APawn* CurrentPawn = GetControlledPawn();
+    APawn *CurrentPawn = GetControlledPawn();
     if (CachedPawn == CurrentPawn)
     {
         return;
     }
 
     CachedPawn = CurrentPawn;
-    bHasTacticalAnchor = false;
     ClearTacticalRoamInput();
-    RecenterOnActivePawn();
 
     if (ActiveCameraMode == ECameraMode::Exploration)
     {
+        bHasTacticalAnchor = false;
+        RecenterOnActivePawn();
         EnterExplorationMode(ActiveTransition);
     }
     else if (ActiveCameraMode == ECameraMode::Tactical)
     {
-        EnterTacticalMode(ActiveTransition);
+        // In tactical mode keep the existing camera yaw and current anchor, then glide toward the new active unit.
+        RecenterOnActivePawn();
+        EnsureTacticalCamera();
+
+        if (TacticalCameraActor && OwningPlayerController && OwningPlayerController->GetViewTarget() != TacticalCameraActor)
+        {
+            OwningPlayerController->SetViewTargetWithBlend(TacticalCameraActor, ActiveTransition.BlendTime);
+        }
     }
 }
 
-void UCameraControllerComponent::EnterExplorationMode(const FCameraModeTransition& Transition)
+void UCameraControllerComponent::EnterExplorationMode(const FCameraModeTransition &Transition)
 {
     if (!OwningPlayerController)
     {
@@ -262,13 +271,13 @@ void UCameraControllerComponent::EnterExplorationMode(const FCameraModeTransitio
     TacticalYaw = 0.0f;
     TacticalSettings.Rotation.Yaw = TacticalYaw;
 
-    if (APawn* Pawn = GetControlledPawn())
+    if (APawn *Pawn = GetControlledPawn())
     {
         OwningPlayerController->SetViewTargetWithBlend(Pawn, Transition.BlendTime);
     }
 }
 
-void UCameraControllerComponent::EnterTacticalMode(const FCameraModeTransition& Transition)
+void UCameraControllerComponent::EnterTacticalMode(const FCameraModeTransition &Transition)
 {
     if (!OwningPlayerController)
     {
@@ -284,10 +293,7 @@ void UCameraControllerComponent::EnterTacticalMode(const FCameraModeTransition& 
 
     if (TacticalCameraActor)
     {
-        const FVector DesiredCameraLocation = TacticalAnchorLocation
-            - TacticalSettings.Rotation.Vector() * TacticalSettings.ArmLength
-            + TacticalSettings.TargetOffset
-            + TacticalSettings.SocketOffset;
+        const FVector DesiredCameraLocation = TacticalAnchorLocation - TacticalSettings.Rotation.Vector() * TacticalSettings.ArmLength + TacticalSettings.TargetOffset + TacticalSettings.SocketOffset;
 
         TacticalCameraActor->SetActorLocationAndRotation(DesiredCameraLocation, TacticalSettings.Rotation);
         TacticalCameraActor->GetCameraComponent()->SetFieldOfView(TacticalSettings.FieldOfView);
@@ -295,14 +301,14 @@ void UCameraControllerComponent::EnterTacticalMode(const FCameraModeTransition& 
     }
 }
 
-void UCameraControllerComponent::EnterCinematicMode(const FCameraModeTransition& Transition)
+void UCameraControllerComponent::EnterCinematicMode(const FCameraModeTransition &Transition)
 {
     if (!OwningPlayerController)
     {
         return;
     }
 
-    if (APawn* Pawn = GetControlledPawn())
+    if (APawn *Pawn = GetControlledPawn())
     {
         OwningPlayerController->SetViewTargetWithBlend(Pawn, Transition.BlendTime);
     }
@@ -310,14 +316,14 @@ void UCameraControllerComponent::EnterCinematicMode(const FCameraModeTransition&
 
 void UCameraControllerComponent::UpdateExplorationCamera(float DeltaTime)
 {
-    USpringArmComponent* SpringArm = FindControlledSpringArm();
-    UCameraComponent* Camera = FindControlledCamera();
+    USpringArmComponent *SpringArm = FindControlledSpringArm();
+    UCameraComponent *Camera = FindControlledCamera();
     if (!SpringArm || !Camera)
     {
         return;
     }
 
-    const FCameraModeViewSettings& Settings = GetModeViewSettings(ECameraMode::Exploration);
+    const FCameraModeViewSettings &Settings = GetModeViewSettings(ECameraMode::Exploration);
     const float InterpSpeed = GetModeInterpolationSpeed();
 
     SpringArm->TargetArmLength = FMath::FInterpTo(SpringArm->TargetArmLength, Settings.ArmLength, DeltaTime, InterpSpeed);
@@ -335,13 +341,13 @@ void UCameraControllerComponent::UpdateTacticalCamera(float DeltaTime)
     }
 
     EnsureTacticalCamera();
-    APawn* Pawn = GetControlledPawn();
+    APawn *Pawn = GetTacticalFocusPawn();
     if (!Pawn || !TacticalCameraActor)
     {
         return;
     }
 
-    const FCameraModeViewSettings& Settings = GetModeViewSettings(ECameraMode::Tactical);
+    const FCameraModeViewSettings &Settings = GetModeViewSettings(ECameraMode::Tactical);
     const float InterpSpeed = GetModeInterpolationSpeed();
     const float AnchorInterpSpeed = GetAnchorInterpolationSpeed();
     const FVector FocusLocation = GetPawnFocusLocation(Pawn);
@@ -366,10 +372,9 @@ void UCameraControllerComponent::UpdateTacticalCamera(float DeltaTime)
 
     TacticalCameraActor->SetActorLocationAndRotation(NewCameraLocation, NewCameraRotation);
     TacticalCameraActor->GetCameraComponent()->SetFieldOfView(FMath::FInterpTo(TacticalCameraActor->GetCameraComponent()->FieldOfView, Settings.FieldOfView, DeltaTime, InterpSpeed));
-
 }
 
-const FCameraModeViewSettings& UCameraControllerComponent::GetModeViewSettings(ECameraMode CameraMode) const
+const FCameraModeViewSettings &UCameraControllerComponent::GetModeViewSettings(ECameraMode CameraMode) const
 {
     switch (CameraMode)
     {
@@ -385,14 +390,35 @@ const FCameraModeViewSettings& UCameraControllerComponent::GetModeViewSettings(E
     }
 }
 
-APawn* UCameraControllerComponent::GetControlledPawn() const
+APawn *UCameraControllerComponent::GetControlledPawn() const
 {
     return OwningPlayerController ? OwningPlayerController->GetPawn() : nullptr;
 }
 
-USpringArmComponent* UCameraControllerComponent::FindControlledSpringArm() const
+APawn *UCameraControllerComponent::GetTacticalFocusPawn() const
 {
-  if (APawn* Pawn = GetControlledPawn())
+    if (!OwningPlayerController)
+    {
+        return nullptr;
+    }
+
+    if (UGameInstance *GameInstance = OwningPlayerController->GetGameInstance())
+    {
+        if (UTacticalTurnSubsystem *TacticalTurnSubsystem = GameInstance->GetSubsystem<UTacticalTurnSubsystem>())
+        {
+            if (ACRPGBaseCharacter *ActiveUnit = TacticalTurnSubsystem->GetActiveUnit())
+            {
+                return ActiveUnit;
+            }
+        }
+    }
+
+    return GetControlledPawn();
+}
+
+USpringArmComponent *UCameraControllerComponent::FindControlledSpringArm() const
+{
+    if (APawn *Pawn = GetControlledPawn())
     {
         return Pawn->FindComponentByClass<USpringArmComponent>();
     }
@@ -400,9 +426,9 @@ USpringArmComponent* UCameraControllerComponent::FindControlledSpringArm() const
     return nullptr;
 }
 
-UCameraComponent* UCameraControllerComponent::FindControlledCamera() const
+UCameraComponent *UCameraControllerComponent::FindControlledCamera() const
 {
-  if (APawn* Pawn = GetControlledPawn())
+    if (APawn *Pawn = GetControlledPawn())
     {
         return Pawn->FindComponentByClass<UCameraComponent>();
     }
@@ -410,7 +436,7 @@ UCameraComponent* UCameraControllerComponent::FindControlledCamera() const
     return nullptr;
 }
 
-FVector UCameraControllerComponent::GetPawnFocusLocation(APawn* Pawn) const
+FVector UCameraControllerComponent::GetPawnFocusLocation(APawn *Pawn) const
 {
     return Pawn ? Pawn->GetActorLocation() + PawnFocusOffset : FVector::ZeroVector;
 }
@@ -418,8 +444,8 @@ FVector UCameraControllerComponent::GetPawnFocusLocation(APawn* Pawn) const
 float UCameraControllerComponent::GetModeInterpolationSpeed() const
 {
     return ActiveTransition.BlendTime > KINDA_SMALL_NUMBER
-        ? FMath::Clamp(1.0f / ActiveTransition.BlendTime, MinimumInterpolationSpeed, MaximumInterpolationSpeed)
-        : MaximumInterpolationSpeed;
+               ? FMath::Clamp(1.0f / ActiveTransition.BlendTime, MinimumInterpolationSpeed, MaximumInterpolationSpeed)
+               : MaximumInterpolationSpeed;
 }
 
 float UCameraControllerComponent::GetAnchorInterpolationSpeed() const

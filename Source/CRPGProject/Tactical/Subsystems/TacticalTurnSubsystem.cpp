@@ -108,11 +108,6 @@ void UTacticalTurnSubsystem::StartTurnMode()
 
     ApplyActiveUnitTimeCompensation();
 
-    if (CameraModeSubsystem)
-    {
-        CameraModeSubsystem->RequestCameraMode(ECameraMode::Tactical, -1.0f, TacticalTurnEvents::TacticalTurnStarted);
-    }
-
     PublishEvent(
         TacticalTurnEvents::TacticalTurnStarted,
         FString::Printf(
@@ -167,12 +162,6 @@ void UTacticalTurnSubsystem::EndTurnMode()
             EndingRound,
             *EndingUnitName,
             RegisteredUnits.Num()));
-
-    CacheSubsystemDependencies();
-    if (CameraModeSubsystem)
-    {
-        CameraModeSubsystem->RequestCameraMode(ECameraMode::Exploration, -1.0f, TacticalTurnEvents::TacticalTurnEnded);
-    }
 }
 
 void UTacticalTurnSubsystem::AdvanceRound()
@@ -381,14 +370,19 @@ void UTacticalTurnSubsystem::PublishEvent(const FString &EventName, const FStrin
 
 void UTacticalTurnSubsystem::ApplyActiveUnitTimeCompensation()
 {
+    const float UnitTimeDilation = 1.0f / TacticalTurnEvents::TacticalGlobalTimeDilation;
+
     if (APlayerController *PlayerController = UGameplayStatics::GetPlayerController(this, 0))
     {
-        PlayerController->CustomTimeDilation = 1.0f / TacticalTurnEvents::TacticalGlobalTimeDilation;
+        PlayerController->CustomTimeDilation = UnitTimeDilation;
     }
 
-    if (ActiveUnit.IsValid())
+    for (const TWeakObjectPtr<ACRPGBaseCharacter> &RegisteredUnit : RegisteredUnits)
     {
-        ActiveUnit->CustomTimeDilation = 1.0f / TacticalTurnEvents::TacticalGlobalTimeDilation;
+        if (ACRPGBaseCharacter *Character = RegisteredUnit.Get())
+        {
+            Character->CustomTimeDilation = UnitTimeDilation;
+        }
     }
 }
 
@@ -399,9 +393,12 @@ void UTacticalTurnSubsystem::ClearActiveUnitTimeCompensation()
         PlayerController->CustomTimeDilation = 1.0f;
     }
 
-    if (ActiveUnit.IsValid())
+    for (const TWeakObjectPtr<ACRPGBaseCharacter> &RegisteredUnit : RegisteredUnits)
     {
-        ActiveUnit->CustomTimeDilation = 1.0f;
+        if (ACRPGBaseCharacter *Character = RegisteredUnit.Get())
+        {
+            Character->CustomTimeDilation = 1.0f;
+        }
     }
 }
 

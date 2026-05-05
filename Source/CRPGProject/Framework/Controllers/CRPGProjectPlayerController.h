@@ -113,6 +113,8 @@ protected:
 	UFUNCTION()
 	void HandleCameraModeChanged(const FCameraModeTransition &Transition);
 	void HandleGameEvent(const FString &EventName, const FString &Payload);
+	void SyncPossessionToActiveTacticalUnit();
+	void RestorePossessionAfterTacticalTurn();
 	void UpdateTacticalRoamInput();
 	void SetControlledPawnTacticalInputSuppressed(bool bSuppressInput);
 	void StopTacticalPrototypeMovement();
@@ -143,6 +145,9 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Input|Tactical", meta = (ClampMin = "0.0", Units = "cm"))
 	float TacticalMinimumCommittedMoveDistance = 5.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Debug")
+	bool bAllowControllingNonPlayerTacticalUnits = false;
+
 	bool bHasActiveTacticalPath = false;
 	TArray<FVector> ActiveTacticalPathPoints;
 	int32 CurrentPathIndex = INDEX_NONE;
@@ -152,6 +157,7 @@ protected:
 	float NextTacticalHoverPreviewRefreshTime = 0.0f;
 	FVector LastTraversalPawnLocation = FVector::ZeroVector;
 	bool bTurnModeMovementEnabled = true;
+	TWeakObjectPtr<APawn> ExplorationPawnBeforeTacticalTurn;
 
 	UPROPERTY()
 	FTacticalMovePreviewData PendingMovePreview;

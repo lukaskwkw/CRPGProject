@@ -39,6 +39,7 @@ ACRPGProjectPlayerController::ACRPGProjectPlayerController()
 {
 	CameraControllerComponent = CreateDefaultSubobject<UCameraControllerComponent>(TEXT("CameraControllerComponent"));
 	TacticalPathPreviewComponent = CreateDefaultSubobject<UTacticalPathPreviewComponent>(TEXT("TacticalPathPreviewComponent"));
+	bAutoManageActiveCameraTarget = false;
 	PrimaryActorTick.bCanEverTick = true;
 }
 
@@ -138,6 +139,14 @@ void ACRPGProjectPlayerController::ToggleDebugCameraMode()
 	if (!IsLocalPlayerController())
 	{
 		return;
+	}
+
+	if (const UTacticalTurnSubsystem *TacticalTurnSubsystem = GetTacticalTurnSubsystem())
+	{
+		if (TacticalTurnSubsystem->IsTurnModeActive())
+		{
+			return;
+		}
 	}
 
 	if (UGameInstance *GameInstance = GetGameInstance())
@@ -400,6 +409,7 @@ void ACRPGProjectPlayerController::BuildTacticalMovePreview(const FVector &Desti
 		return;
 	}
 
+	// Keep the raw nav path and its affordable subset together so the HUD and renderer stay in sync.
 	PendingMovePreview = FTacticalMovePreviewData();
 	PendingMovePreview.bHasPreview = true;
 	PendingMovePreview.Destination = ProjectedLocation.Location;
@@ -427,12 +437,14 @@ void ACRPGProjectPlayerController::BuildTacticalMovePreview(const FVector &Desti
 			PendingMovePreview.bIsAffordable = TacticalUnitComponent->HasMovementBudget(PendingMovePreview.PathDistanceCm);
 			PendingMovePreview.bIsAffordable = PendingMovePreview.PathDistanceCm <= RemainingMovementRangeCm + KINDA_SMALL_NUMBER;
 			PendingMovePreview.bHasOverBudgetSegment = !PendingMovePreview.bIsAffordable;
+			// Clamp the rendered path to the budget, but keep the full nav path for over-budget visualization.
 			BuildClampedTacticalPath(PendingMovePreview.PathPoints, RemainingMovementRangeCm, PendingMovePreview.AffordablePathPoints, PendingMovePreview.AffordablePathDistanceCm);
 		}
 	}
 
 	if (TacticalPathPreviewComponent)
 	{
+		// The preview component only draws cached world-space points; all path math is finalized here.
 		TacticalPathPreviewComponent->RenderPath(PendingMovePreview.PathPoints, PendingMovePreview.AffordablePathDistanceCm);
 	}
 
@@ -490,6 +502,7 @@ void ACRPGProjectPlayerController::CommitPendingTacticalMove()
 		return;
 	}
 
+	// Freeze the current preview into a traversal request before clearing the transient preview state.
 	const TArray<FVector> PathPoints = PendingMovePreview.AffordablePathPoints;
 	const float PathDistanceCm = PendingMovePreview.AffordablePathDistanceCm;
 
@@ -510,6 +523,7 @@ void ACRPGProjectPlayerController::CommitPendingTacticalMove()
 
 void ACRPGProjectPlayerController::ClearPendingTacticalMovePreview()
 {
+	// Clearing both the cached preview data and the debug renderer keeps hover previews stateless.
 	PendingMovePreview = FTacticalMovePreviewData();
 
 	if (TacticalPathPreviewComponent)
@@ -568,6 +582,7 @@ void ACRPGProjectPlayerController::UpdateTacticalMovePreviewFromHover()
 
 	if (PendingMovePreview.bHasPreview && FVector::Dist2D(PendingMovePreview.Destination, HoveredWorldLocation) <= TacticalHoverPreviewRefreshTolerance)
 	{
+		// Avoid rebuilding the same nav path every tick while the cursor is effectively stationary.
 		if (GetWorld() && GetWorld()->GetTimeSeconds() < NextTacticalHoverPreviewRefreshTime)
 		{
 			return;
@@ -837,7 +852,9 @@ void ACRPGProjectPlayerController::SpawnTacticalCombatHUD()
 
 void ACRPGProjectPlayerController::HandleTacticalPathTraversalCompleted()
 {
-	const float ConsumedDistanceCm = FMath::Min(PendingPathDistanceConsumption, ActiveTraversalTravelledDistanceCm);
+	// On a completed traversal, spend the full committed path budget. Interrupted moves already clamp
+	// PendingPathDistanceConsumption down to the travelled portion before this method is called.
+	float ConsumedDistanceCm = PendingPathDistanceConsumption;
 	if (ConsumedDistanceCm <= TacticalMinimumCommittedMoveDistance)
 	{
 		return;
@@ -851,6 +868,14 @@ void ACRPGProjectPlayerController::HandleTacticalPathTraversalCompleted()
 			{
 				if (UTacticalUnitComponent *TacticalUnitComponent = ActiveUnit->GetTacticalUnitComponent())
 				{
+					const float RemainingMovementRangeCm = TacticalUnitComponent->GetRemainingMovementRange();
+
+					// If the approved move would leave only an unusable micro-budget, consume the remainder.
+					if (RemainingMovementRangeCm - PendingPathDistanceConsumption <= TacticalMinimumCommittedMoveDistance + KINDA_SMALL_NUMBER)
+					{
+						ConsumedDistanceCm = RemainingMovementRangeCm;
+					}
+
 					TacticalUnitComponent->ConsumeMovement(ConsumedDistanceCm);
 
 					if (UGameInstance *GameInstance = GetGameInstance())
@@ -908,20 +933,70 @@ void ACRPGProjectPlayerController::HandleGameEvent(const FString &EventName, con
 {
 	if (EventName == TacticalCombatEvents::TacticalTurnStarted || EventName == TacticalCombatEvents::TacticalTurnEnded || EventName == TacticalCombatEvents::TacticalEncounterStarted || EventName == TacticalCombatEvents::TacticalRoundStarted || EventName == TacticalCombatEvents::TacticalActiveUnitChanged || EventName == TacticalCombatEvents::TacticalUnitMovementConsumed)
 	{
+		if (EventName == TacticalCombatEvents::TacticalTurnStarted)
+		{
+			if (!ExplorationPawnBeforeTacticalTurn.IsValid())
+			{
+				ExplorationPawnBeforeTacticalTurn = GetPawn();
+			}
+
+			SyncPossessionToActiveTacticalUnit();
+		}
+
 		if (EventName == TacticalCombatEvents::TacticalTurnStarted || EventName == TacticalCombatEvents::TacticalActiveUnitChanged)
 		{
+			SyncPossessionToActiveTacticalUnit();
+
 			const UTacticalTurnSubsystem *TacticalTurnSubsystem = GetTacticalTurnSubsystem();
-			bTurnModeMovementEnabled = TacticalTurnSubsystem && TacticalTurnSubsystem->GetActiveUnit() == GetPawn();
+			const ACRPGBaseCharacter *ActiveUnit = TacticalTurnSubsystem ? TacticalTurnSubsystem->GetActiveUnit() : nullptr;
+			const UTacticalUnitComponent *TacticalUnitComponent = ActiveUnit ? ActiveUnit->GetTacticalUnitComponent() : nullptr;
+			bTurnModeMovementEnabled = TacticalUnitComponent && (bAllowControllingNonPlayerTacticalUnits || TacticalUnitComponent->IsPlayerControlled());
 		}
 
 		if (EventName == TacticalCombatEvents::TacticalTurnEnded)
 		{
+			RestorePossessionAfterTacticalTurn();
 			bTurnModeMovementEnabled = true;
 			ClearPendingTacticalMovePreview();
 		}
 
 		RefreshTacticalCombatHUD();
 	}
+}
+
+void ACRPGProjectPlayerController::SyncPossessionToActiveTacticalUnit()
+{
+	UTacticalTurnSubsystem *TacticalTurnSubsystem = GetTacticalTurnSubsystem();
+	ACRPGBaseCharacter *ActiveUnit = TacticalTurnSubsystem ? TacticalTurnSubsystem->GetActiveUnit() : nullptr;
+	UTacticalUnitComponent *TacticalUnitComponent = ActiveUnit ? ActiveUnit->GetTacticalUnitComponent() : nullptr;
+	if (!IsValid(ActiveUnit) || !TacticalUnitComponent || (!bAllowControllingNonPlayerTacticalUnits && !TacticalUnitComponent->IsPlayerControlled()) || GetPawn() == ActiveUnit)
+	{
+		return;
+	}
+
+	ClearPendingTacticalMovePreview();
+	ClearTacticalPathTraversal(true);
+	StopMovement();
+	SetControlledPawnTacticalInputSuppressed(true);
+	Possess(ActiveUnit);
+	SetControlledPawnTacticalInputSuppressed(true);
+}
+
+void ACRPGProjectPlayerController::RestorePossessionAfterTacticalTurn()
+{
+	APawn *ExplorationPawn = ExplorationPawnBeforeTacticalTurn.Get();
+	ExplorationPawnBeforeTacticalTurn.Reset();
+
+	if (!IsValid(ExplorationPawn) || GetPawn() == ExplorationPawn)
+	{
+		return;
+	}
+
+	ClearPendingTacticalMovePreview();
+	ClearTacticalPathTraversal(true);
+	StopMovement();
+	Possess(ExplorationPawn);
+	SetControlledPawnTacticalInputSuppressed(false);
 }
 
 void ACRPGProjectPlayerController::OnPossess(APawn *InPawn)

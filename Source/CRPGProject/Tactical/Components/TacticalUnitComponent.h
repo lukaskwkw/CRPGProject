@@ -20,6 +20,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "Tactical|Encounter")
     bool IsAlive() const;
 
+    UFUNCTION(BlueprintPure, Category = "Tactical|Identity")
+    bool IsPlayerControlled() const;
+
     UFUNCTION(BlueprintPure, Category = "Tactical|Encounter")
     bool IsEnemyTo(const UTacticalUnitComponent *OtherUnit) const;
 

@@ -7,8 +7,10 @@
 
 class ACameraActor;
 class APlayerController;
+class ACRPGBaseCharacter;
 class UCameraComponent;
 class USpringArmComponent;
+class UTacticalTurnSubsystem;
 
 USTRUCT(BlueprintType)
 struct FCameraModeViewSettings
@@ -41,10 +43,10 @@ public:
 
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-    virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+    virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction) override;
 
     UFUNCTION(BlueprintCallable, Category = "Camera|Tactical")
-    void AddTacticalRoamInput(const FVector2D& InputAxis);
+    void AddTacticalRoamInput(const FVector2D &InputAxis);
 
     UFUNCTION(BlueprintCallable, Category = "Camera|Tactical")
     void ClearTacticalRoamInput();
@@ -63,7 +65,7 @@ public:
 
 protected:
     UFUNCTION()
-    void HandleCameraModeChanged(const FCameraModeTransition& Transition);
+    void HandleCameraModeChanged(const FCameraModeTransition &Transition);
 
 private:
     void InitializeForCurrentMode();
@@ -72,16 +74,17 @@ private:
     void UpdateTacticalPitchFromZoom();
     void EnsureTacticalCamera();
     void HandleControlledPawnChanged();
-    void EnterExplorationMode(const FCameraModeTransition& Transition);
-    void EnterTacticalMode(const FCameraModeTransition& Transition);
-    void EnterCinematicMode(const FCameraModeTransition& Transition);
+    void EnterExplorationMode(const FCameraModeTransition &Transition);
+    void EnterTacticalMode(const FCameraModeTransition &Transition);
+    void EnterCinematicMode(const FCameraModeTransition &Transition);
     void UpdateExplorationCamera(float DeltaTime);
     void UpdateTacticalCamera(float DeltaTime);
-    const FCameraModeViewSettings& GetModeViewSettings(ECameraMode CameraMode) const;
-    APawn* GetControlledPawn() const;
-    USpringArmComponent* FindControlledSpringArm() const;
-    UCameraComponent* FindControlledCamera() const;
-    FVector GetPawnFocusLocation(APawn* Pawn) const;
+    const FCameraModeViewSettings &GetModeViewSettings(ECameraMode CameraMode) const;
+    APawn *GetControlledPawn() const;
+    APawn *GetTacticalFocusPawn() const;
+    USpringArmComponent *FindControlledSpringArm() const;
+    UCameraComponent *FindControlledCamera() const;
+    FVector GetPawnFocusLocation(APawn *Pawn) const;
     float GetModeInterpolationSpeed() const;
     float GetAnchorInterpolationSpeed() const;
 

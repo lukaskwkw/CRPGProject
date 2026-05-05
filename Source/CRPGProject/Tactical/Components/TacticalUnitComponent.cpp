@@ -19,6 +19,11 @@ bool UTacticalUnitComponent::IsAlive() const
     return bIsAlive;
 }
 
+bool UTacticalUnitComponent::IsPlayerControlled() const
+{
+    return bIsPlayerControlled;
+}
+
 bool UTacticalUnitComponent::IsEnemyTo(const UTacticalUnitComponent *OtherUnit) const
 {
     return OtherUnit != nullptr && OtherUnit != this && TeamId != OtherUnit->TeamId;

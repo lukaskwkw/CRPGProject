@@ -24,7 +24,8 @@ void UTacticalPathPreviewComponent::TickComponent(float DeltaTime, ELevelTick Ti
     const FColor ValidDebugColor = ValidPathColor.ToFColor(true);
     const FColor InvalidDebugColor = InvalidPathColor.ToFColor(true);
 
-  DrawDebugSphere(GetWorld(), CachedPathPoints[0] + PathOffset, PathDebugSphereRadius, PathDebugSphereSegments, CachedAffordableDistanceCm > 0.0f ? ValidDebugColor : InvalidDebugColor, false, 0.0f);
+    // Mark the path origin so it is obvious which world-space point navigation returned as the start.
+    DrawDebugSphere(GetWorld(), CachedPathPoints[0] + PathOffset, PathDebugSphereRadius, PathDebugSphereSegments, CachedAffordableDistanceCm > 0.0f ? ValidDebugColor : InvalidDebugColor, false, 0.0f);
 
     for (int32 PointIndex = 1; PointIndex < CachedPathPoints.Num(); ++PointIndex)
     {
@@ -35,21 +36,24 @@ void UTacticalPathPreviewComponent::TickComponent(float DeltaTime, ELevelTick Ti
 
         if (SegmentEndDistanceCm <= CachedAffordableDistanceCm + KINDA_SMALL_NUMBER)
         {
-           DrawPathSegment(SegmentStart, SegmentEnd, ValidDebugColor);
+            // Entire segment is still within the affordable movement budget.
+            DrawPathSegment(SegmentStart, SegmentEnd, ValidDebugColor);
             DrawDebugSphere(GetWorld(), SegmentEnd + PathOffset, PathDebugSphereRadius, PathDebugSphereSegments, ValidDebugColor, false, 0.0f);
         }
         else if (TraversedDistanceCm >= CachedAffordableDistanceCm - KINDA_SMALL_NUMBER)
         {
-         DrawPathSegment(SegmentStart, SegmentEnd, InvalidDebugColor);
+            // Budget was already exhausted earlier, so the rest of the path is rendered as over-budget.
+            DrawPathSegment(SegmentStart, SegmentEnd, InvalidDebugColor);
             DrawDebugSphere(GetWorld(), SegmentEnd + PathOffset, PathDebugSphereRadius, PathDebugSphereSegments, InvalidDebugColor, false, 0.0f);
         }
         else
         {
+            // Split the segment at the exact budget breakpoint so the preview clearly shows the affordable portion.
             const float RemainingAffordableDistanceCm = CachedAffordableDistanceCm - TraversedDistanceCm;
             const float Alpha = SegmentDistanceCm > KINDA_SMALL_NUMBER ? RemainingAffordableDistanceCm / SegmentDistanceCm : 0.0f;
             const FVector BreakPoint = FMath::Lerp(SegmentStart, SegmentEnd, FMath::Clamp(Alpha, 0.0f, 1.0f));
 
-           DrawPathSegment(SegmentStart, BreakPoint, ValidDebugColor);
+            DrawPathSegment(SegmentStart, BreakPoint, ValidDebugColor);
             DrawDebugSphere(GetWorld(), BreakPoint + PathOffset, PathDebugSphereRadius, PathDebugSphereSegments, InvalidDebugColor, false, 0.0f);
             DrawPathSegment(BreakPoint, SegmentEnd, InvalidDebugColor);
             DrawDebugSphere(GetWorld(), SegmentEnd + PathOffset, PathDebugSphereRadius, PathDebugSphereSegments, InvalidDebugColor, false, 0.0f);
@@ -61,6 +65,7 @@ void UTacticalPathPreviewComponent::TickComponent(float DeltaTime, ELevelTick Ti
 
 void UTacticalPathPreviewComponent::RenderPath(const TArray<FVector> &PathPoints, float AffordableDistanceCm)
 {
+    // Cache the raw nav path in world space so TickComponent can redraw it every frame.
     CachedPathPoints = PathPoints;
     bHasPathToRender = CachedPathPoints.Num() > 0;
     CachedAffordableDistanceCm = FMath::Max(0.0f, AffordableDistanceCm);
