@@ -18,6 +18,9 @@ public:
     void ResetForNewRound();
 
     UFUNCTION(BlueprintPure, Category = "Tactical|Encounter")
+    bool IsAlive() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Encounter")
     bool IsEnemyTo(const UTacticalUnitComponent *OtherUnit) const;
 
     UFUNCTION(BlueprintCallable, Category = "Tactical|Encounter")
@@ -26,8 +29,17 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Tactical|Encounter")
     void SetInitiative(int32 InValue);
 
+    UFUNCTION(BlueprintPure, Category = "Tactical|Encounter")
+    int32 GetCurrentInitiative() const;
+
     UFUNCTION(BlueprintCallable, Category = "Tactical|Encounter")
     void ResetEncounterTurnState();
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Encounter")
+    bool HasCompletedEncounterTurn() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Tactical|Encounter")
+    void SetTurnCompleted(bool bCompleted);
 
     UFUNCTION(BlueprintCallable, Category = "Tactical")
     void ConsumeMovement(float Amount);

@@ -28,7 +28,9 @@ namespace TacticalCombatEvents
 {
 	static const FString TacticalTurnStarted = TEXT("tactical_turn_started");
 	static const FString TacticalTurnEnded = TEXT("tactical_turn_ended");
+	static const FString TacticalEncounterStarted = TEXT("tactical_encounter_started");
 	static const FString TacticalRoundStarted = TEXT("tactical_round_started");
+	static const FString TacticalActiveUnitChanged = TEXT("tactical_active_unit_changed");
 	static const FString TacticalUnitMovementConsumed = TEXT("tactical_unit_movement_consumed");
 	static const FString CameraModeChanged = TEXT("camera_mode_changed");
 }
@@ -322,12 +324,12 @@ void ACRPGProjectPlayerController::HandleTacticalLeftClick()
 	{
 		if (TacticalTurnSubsystem->IsTurnModeActive())
 		{
-            if (!bTurnModeMovementEnabled)
+			if (!bTurnModeMovementEnabled)
 			{
 				return;
 			}
 
-         if (bHasActiveTacticalPath)
+			if (bHasActiveTacticalPath)
 			{
 				StopActiveTacticalMove(true);
 			}
@@ -370,7 +372,7 @@ void ACRPGProjectPlayerController::HandleTacticalLeftClick()
 
 void ACRPGProjectPlayerController::BuildTacticalMovePreview(const FVector &Destination)
 {
-    if (!bTurnModeMovementEnabled)
+	if (!bTurnModeMovementEnabled)
 	{
 		ClearPendingTacticalMovePreview();
 		return;
@@ -543,7 +545,7 @@ void ACRPGProjectPlayerController::UpdateTacticalMovePreviewFromHover()
 	}
 
 	UTacticalTurnSubsystem *TacticalTurnSubsystem = GetTacticalTurnSubsystem();
-    if (!TacticalTurnSubsystem || !TacticalTurnSubsystem->IsTurnModeActive() || !bTurnModeMovementEnabled)
+	if (!TacticalTurnSubsystem || !TacticalTurnSubsystem->IsTurnModeActive() || !bTurnModeMovementEnabled)
 	{
 		if (PendingMovePreview.bHasPreview)
 		{
@@ -742,7 +744,7 @@ void ACRPGProjectPlayerController::UpdateTacticalPathTraversal(float DeltaTime)
 	const bool bIsFinalPathPoint = CurrentPathIndex == ActiveTacticalPathPoints.Num() - 1;
 	const float CurrentAcceptanceRadius = bIsFinalPathPoint ? FMath::Min(TacticalAcceptanceRadius, TacticalFinalAcceptanceRadius) : TacticalAcceptanceRadius;
 
-  if (ToTarget.SizeSquared() <= FMath::Square(CurrentAcceptanceRadius))
+	if (ToTarget.SizeSquared() <= FMath::Square(CurrentAcceptanceRadius))
 	{
 		UE_LOG(LogCRPGProject, Verbose, TEXT("[TacticalMove] Reached path node %d at %s"), CurrentPathIndex, *TargetPoint.ToString());
 		++CurrentPathIndex;
@@ -835,7 +837,7 @@ void ACRPGProjectPlayerController::SpawnTacticalCombatHUD()
 
 void ACRPGProjectPlayerController::HandleTacticalPathTraversalCompleted()
 {
- const float ConsumedDistanceCm = FMath::Min(PendingPathDistanceConsumption, ActiveTraversalTravelledDistanceCm);
+	const float ConsumedDistanceCm = FMath::Min(PendingPathDistanceConsumption, ActiveTraversalTravelledDistanceCm);
 	if (ConsumedDistanceCm <= TacticalMinimumCommittedMoveDistance)
 	{
 		return;
@@ -849,7 +851,7 @@ void ACRPGProjectPlayerController::HandleTacticalPathTraversalCompleted()
 			{
 				if (UTacticalUnitComponent *TacticalUnitComponent = ActiveUnit->GetTacticalUnitComponent())
 				{
-                 TacticalUnitComponent->ConsumeMovement(ConsumedDistanceCm);
+					TacticalUnitComponent->ConsumeMovement(ConsumedDistanceCm);
 
 					if (UGameInstance *GameInstance = GetGameInstance())
 					{
@@ -860,7 +862,7 @@ void ACRPGProjectPlayerController::HandleTacticalPathTraversalCompleted()
 								FString::Printf(
 									TEXT("unit=%s;distance_cm=%.2f;remaining_cm=%.2f;round=%d"),
 									*ActiveUnit->GetName(),
-                                 ConsumedDistanceCm,
+									ConsumedDistanceCm,
 									TacticalUnitComponent->GetRemainingMovementRange(),
 									TacticalTurnSubsystem->GetCurrentRound()));
 						}
@@ -904,11 +906,12 @@ void ACRPGProjectPlayerController::HandleCameraModeChanged(const FCameraModeTran
 
 void ACRPGProjectPlayerController::HandleGameEvent(const FString &EventName, const FString &Payload)
 {
-	if (EventName == TacticalCombatEvents::TacticalTurnStarted || EventName == TacticalCombatEvents::TacticalTurnEnded || EventName == TacticalCombatEvents::TacticalRoundStarted || EventName == TacticalCombatEvents::TacticalUnitMovementConsumed)
+	if (EventName == TacticalCombatEvents::TacticalTurnStarted || EventName == TacticalCombatEvents::TacticalTurnEnded || EventName == TacticalCombatEvents::TacticalEncounterStarted || EventName == TacticalCombatEvents::TacticalRoundStarted || EventName == TacticalCombatEvents::TacticalActiveUnitChanged || EventName == TacticalCombatEvents::TacticalUnitMovementConsumed)
 	{
-		if (EventName == TacticalCombatEvents::TacticalTurnStarted)
+		if (EventName == TacticalCombatEvents::TacticalTurnStarted || EventName == TacticalCombatEvents::TacticalActiveUnitChanged)
 		{
-			bTurnModeMovementEnabled = true;
+			const UTacticalTurnSubsystem *TacticalTurnSubsystem = GetTacticalTurnSubsystem();
+			bTurnModeMovementEnabled = TacticalTurnSubsystem && TacticalTurnSubsystem->GetActiveUnit() == GetPawn();
 		}
 
 		if (EventName == TacticalCombatEvents::TacticalTurnEnded)

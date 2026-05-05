@@ -14,6 +14,11 @@ void UTacticalUnitComponent::ResetForNewRound()
     bTurnConsumed = false;
 }
 
+bool UTacticalUnitComponent::IsAlive() const
+{
+    return bIsAlive;
+}
+
 bool UTacticalUnitComponent::IsEnemyTo(const UTacticalUnitComponent *OtherUnit) const
 {
     return OtherUnit != nullptr && OtherUnit != this && TeamId != OtherUnit->TeamId;
@@ -30,9 +35,24 @@ void UTacticalUnitComponent::SetInitiative(int32 InValue)
     CurrentInitiative = InValue;
 }
 
+int32 UTacticalUnitComponent::GetCurrentInitiative() const
+{
+    return CurrentInitiative;
+}
+
 void UTacticalUnitComponent::ResetEncounterTurnState()
 {
     bTurnCompleted = !bIsAlive;
+}
+
+bool UTacticalUnitComponent::HasCompletedEncounterTurn() const
+{
+    return bTurnCompleted;
+}
+
+void UTacticalUnitComponent::SetTurnCompleted(bool bCompleted)
+{
+    bTurnCompleted = bCompleted || !bIsAlive;
 }
 
 void UTacticalUnitComponent::ConsumeMovement(float Amount)

@@ -7,6 +7,7 @@
 class ACRPGBaseCharacter;
 class UCameraModeSubsystem;
 class UEventBusSubsystem;
+class UTacticalUnitComponent;
 
 UENUM(BlueprintType)
 enum class ETacticalTurnState : uint8
@@ -22,7 +23,7 @@ class CRPGPROJECT_API UTacticalTurnSubsystem : public UGameInstanceSubsystem
     GENERATED_BODY()
 
 public:
-    virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+    virtual void Initialize(FSubsystemCollectionBase &Collection) override;
     virtual void Deinitialize() override;
 
     UFUNCTION(BlueprintCallable, Category = "Tactical|Turn")
@@ -38,10 +39,13 @@ public:
     void AdvanceRound();
 
     UFUNCTION(BlueprintCallable, Category = "Tactical|Turn")
-    void RegisterUnit(ACRPGBaseCharacter* Unit);
+    void EndCurrentUnitTurn();
 
     UFUNCTION(BlueprintCallable, Category = "Tactical|Turn")
-    void UnregisterUnit(ACRPGBaseCharacter* Unit);
+    void RegisterUnit(ACRPGBaseCharacter *Unit);
+
+    UFUNCTION(BlueprintCallable, Category = "Tactical|Turn")
+    void UnregisterUnit(ACRPGBaseCharacter *Unit);
 
     UFUNCTION(BlueprintPure, Category = "Tactical|Turn")
     ETacticalTurnState GetCurrentState() const;
@@ -50,21 +54,38 @@ public:
     bool IsTurnModeActive() const;
 
     UFUNCTION(BlueprintPure, Category = "Tactical|Turn")
-    ACRPGBaseCharacter* GetActiveUnit() const;
+    ACRPGBaseCharacter *GetActiveUnit() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Turn")
+    const TArray<UTacticalUnitComponent *> &GetInitiativeOrder() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Turn")
+    UTacticalUnitComponent *GetCurrentActiveUnit() const;
 
     UFUNCTION(BlueprintPure, Category = "Tactical|Turn")
     int32 GetCurrentRound() const;
 
+    UFUNCTION(BlueprintPure, Category = "Tactical|Turn")
+    bool IsEncounterRunning() const;
+
 private:
-    ACRPGBaseCharacter* ResolveCurrentlyPossessedUnit() const;
-    void PublishEvent(const FString& EventName, const FString& Payload) const;
+    ACRPGBaseCharacter *ResolveCurrentlyPossessedUnit() const;
+    void PublishEvent(const FString &EventName, const FString &Payload) const;
     void ApplyActiveUnitTimeCompensation();
     void ClearActiveUnitTimeCompensation();
     void CacheSubsystemDependencies();
+    void SortInitiativeOrder();
+    void ResetInitiativeUnitsForNewRound();
+    void RefreshActiveUnitFromInitiative();
+    void BroadcastActiveUnitChanged() const;
+    int32 FindNextAliveInitiativeIndex(int32 StartIndex) const;
 
 private:
     UPROPERTY()
     bool bIsTurnModeActive = false;
+
+    UPROPERTY()
+    bool bEncounterRunning = false;
 
     UPROPERTY()
     ETacticalTurnState CurrentState = ETacticalTurnState::Disabled;
@@ -74,6 +95,12 @@ private:
 
     UPROPERTY()
     TWeakObjectPtr<ACRPGBaseCharacter> ActiveUnit;
+
+    UPROPERTY()
+    TArray<UTacticalUnitComponent *> InitiativeOrder;
+
+    UPROPERTY()
+    int32 ActiveInitiativeIndex = INDEX_NONE;
 
     UPROPERTY()
     TArray<TWeakObjectPtr<ACRPGBaseCharacter>> RegisteredUnits;
