@@ -181,6 +181,10 @@ For the possessed player character, use the NavigationSystem only for path calcu
 
 Additionally, implement hover-based path preview for tactical movement UX. Use click to commit actions and allow over-budget clicks by clamping traversal to the affordable portion while distinctly previewing over-budget segments.
 
+For occupied tactical space, prefer dynamic nav modifiers owned by `ACRPGBaseCharacter` over bespoke preview avoidance logic. The shared blocker should stay hidden, nav-only, and capsule-shaped so turn-mode occupancy reads closer to the character footprint than a square box.
+
+Do not use `GlobalTimeDilation` to simulate tactical pause. Turn mode should keep normal world time and rely on subsystem state, possession changes, movement gating, and nav blockers instead of slowing the entire world.
+
 ---
 
 ## 14. Source Folder Architecture Rules

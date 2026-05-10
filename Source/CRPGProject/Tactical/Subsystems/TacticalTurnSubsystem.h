@@ -71,8 +71,7 @@ public:
 private:
     ACRPGBaseCharacter *ResolveCurrentlyPossessedUnit() const;
     void PublishEvent(const FString &EventName, const FString &Payload) const;
-    void ApplyActiveUnitTimeCompensation();
-    void ClearActiveUnitTimeCompensation();
+    void RefreshRegisteredUnitNavigationBlockers() const;
     void CacheSubsystemDependencies();
     void SortInitiativeOrder();
     void ResetInitiativeUnitsForNewRound();

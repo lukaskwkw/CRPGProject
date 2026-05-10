@@ -1,20 +1,39 @@
 #include "CRPGBaseCharacter.h"
 #include "AbilitySystemComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "CRPGAttributeSet.h"
 #include "Engine/GameInstance.h"
+#include "NavAreas/NavArea_Obstacle.h"
+#include "NavigationSystem.h"
 #include "Tactical/Components/TacticalUnitComponent.h"
 #include "Tactical/Subsystems/TacticalTurnSubsystem.h"
+#include "World/Navigation/TacticalTurnNavAreas.h"
 
 ACRPGBaseCharacter::ACRPGBaseCharacter()
 {
     PrimaryActorTick.bCanEverTick = false;
 
+    // Base character owns the gameplay data component and the nav-only blocker so all derived pawns share the same rules.
     AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
     AttributeSet = CreateDefaultSubobject<UCRPGAttributeSet>(TEXT("AttributeSet"));
     TacticalUnitComponent = CreateDefaultSubobject<UTacticalUnitComponent>(TEXT("TacticalUnitComponent"));
+    TacticalOccupancyNavigationBlocker = CreateDefaultSubobject<UCapsuleComponent>(TEXT("TacticalOccupancyNavigationBlocker"));
+
+    if (TacticalOccupancyNavigationBlocker)
+    {
+        // This capsule never collides physically. It only projects occupied space into the navmesh as an obstacle area.
+        TacticalOccupancyNavigationBlocker->SetupAttachment(GetRootComponent());
+        TacticalOccupancyNavigationBlocker->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        TacticalOccupancyNavigationBlocker->SetCollisionResponseToAllChannels(ECR_Ignore);
+        TacticalOccupancyNavigationBlocker->SetGenerateOverlapEvents(false);
+        TacticalOccupancyNavigationBlocker->SetHiddenInGame(true);
+        TacticalOccupancyNavigationBlocker->bDynamicObstacle = true;
+        TacticalOccupancyNavigationBlocker->SetCanEverAffectNavigation(false);
+        TacticalOccupancyNavigationBlocker->SetAreaClassOverride(UNavArea_Obstacle::StaticClass());
+    }
 }
 
-UAbilitySystemComponent* ACRPGBaseCharacter::GetAbilitySystemComponent() const
+UAbilitySystemComponent *ACRPGBaseCharacter::GetAbilitySystemComponent() const
 {
     return AbilitySystemComponent;
 }
@@ -23,9 +42,12 @@ void ACRPGBaseCharacter::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (UGameInstance* GameInstance = GetGameInstance())
+    // Push the initial occupancy state before registering the unit so previews see the correct blocker size immediately.
+    UpdateTacticalOccupancyNavigationBlocker();
+
+    if (UGameInstance *GameInstance = GetGameInstance())
     {
-        if (UTacticalTurnSubsystem* TacticalTurnSubsystem = GameInstance->GetSubsystem<UTacticalTurnSubsystem>())
+        if (UTacticalTurnSubsystem *TacticalTurnSubsystem = GameInstance->GetSubsystem<UTacticalTurnSubsystem>())
         {
             TacticalTurnSubsystem->RegisterUnit(this);
         }
@@ -36,9 +58,9 @@ void ACRPGBaseCharacter::BeginPlay()
 
 void ACRPGBaseCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    if (UGameInstance* GameInstance = GetGameInstance())
+    if (UGameInstance *GameInstance = GetGameInstance())
     {
-        if (UTacticalTurnSubsystem* TacticalTurnSubsystem = GameInstance->GetSubsystem<UTacticalTurnSubsystem>())
+        if (UTacticalTurnSubsystem *TacticalTurnSubsystem = GameInstance->GetSubsystem<UTacticalTurnSubsystem>())
         {
             TacticalTurnSubsystem->UnregisterUnit(this);
         }
@@ -47,7 +69,56 @@ void ACRPGBaseCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
     Super::EndPlay(EndPlayReason);
 }
 
-UTacticalUnitComponent* ACRPGBaseCharacter::GetTacticalUnitComponent() const
+void ACRPGBaseCharacter::UpdateTacticalOccupancyNavigationBlocker(const ACRPGBaseCharacter *ReferenceCharacter)
+{
+    if (!TacticalOccupancyNavigationBlocker)
+    {
+        return;
+    }
+
+    // The blocker size is data-driven from the tactical unit so small and large units can reserve different footprints.
+    const UTacticalUnitComponent *UnitComponent = GetTacticalUnitComponent();
+    const UTacticalTurnSubsystem *TacticalTurnSubsystem = GetGameInstance() ? GetGameInstance()->GetSubsystem<UTacticalTurnSubsystem>() : nullptr;
+    const bool bIsTurnModeActive = TacticalTurnSubsystem && TacticalTurnSubsystem->IsTurnModeActive();
+    bool bShouldBlockNavigation = bIsTurnModeActive && UnitComponent && UnitComponent->IsOccupyingTacticalSpace();
+    float BlockerRadius = UnitComponent ? UnitComponent->GetNavigationBlockerRadiusCm() : 1.0f;
+    float BlockerHalfHeight = UnitComponent ? UnitComponent->GetNavigationBlockerHalfHeightCm() : 1.0f;
+    TSubclassOf<UNavArea> AreaClass = UNavArea_Obstacle::StaticClass();
+
+    if (!UnitComponent)
+    {
+        if (const UCapsuleComponent *CharacterCapsuleComponent = GetCapsuleComponent())
+        {
+            BlockerRadius = FMath::Max(1.0f, CharacterCapsuleComponent->GetUnscaledCapsuleRadius());
+            BlockerHalfHeight = FMath::Max(1.0f, CharacterCapsuleComponent->GetUnscaledCapsuleHalfHeight());
+        }
+    }
+
+    if (!bIsTurnModeActive)
+    {
+        bShouldBlockNavigation = false;
+    }
+    else if (ReferenceCharacter == this)
+    {
+        bShouldBlockNavigation = false;
+    }
+    else if (ReferenceCharacter)
+    {
+        AreaClass = UTacticalTurnNavArea_EnemyOccupied::StaticClass();
+    }
+
+    TacticalOccupancyNavigationBlocker->SetCapsuleSize(BlockerRadius, BlockerHalfHeight);
+    TacticalOccupancyNavigationBlocker->SetAreaClassOverride(AreaClass);
+    TacticalOccupancyNavigationBlocker->SetCanEverAffectNavigation(bShouldBlockNavigation);
+
+    if (bShouldBlockNavigation && TacticalOccupancyNavigationBlocker->IsRegistered())
+    {
+        // Area class and extent changes do not automatically refresh nav octree data for an already registered shape component.
+        FNavigationSystem::UpdateComponentData(*TacticalOccupancyNavigationBlocker);
+    }
+}
+
+UTacticalUnitComponent *ACRPGBaseCharacter::GetTacticalUnitComponent() const
 {
     return TacticalUnitComponent;
 }

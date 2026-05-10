@@ -14,6 +14,28 @@ class CRPGPROJECT_API UTacticalUnitComponent : public UActorComponent
 public:
     UTacticalUnitComponent();
 
+    // Logical occupancy is the gameplay-level source of truth used by preview/pathing and nav blockers.
+    UFUNCTION(BlueprintPure, Category = "Tactical|Occupancy")
+    bool IsOccupyingTacticalSpace() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Occupancy")
+    FVector GetOccupiedLocation() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Occupancy")
+    float GetOccupancyRadiusCm() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Occupancy")
+    float GetOccupancyHalfHeightCm() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Occupancy")
+    float GetNavigationBlockerRadiusCm() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Occupancy")
+    float GetNavigationBlockerHalfHeightCm() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Tactical|Occupancy")
+    void SetOccupancySuppressed(bool bSuppressed);
+
     UFUNCTION(BlueprintCallable, Category = "Tactical")
     void ResetForNewRound();
 
@@ -74,6 +96,29 @@ protected:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Encounter", meta = (AllowPrivateAccess = "true"))
     bool bIsAlive = true;
+
+    // If false, the unit still exists in initiative order but does not reserve tactical space.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Occupancy", meta = (AllowPrivateAccess = "true"))
+    bool bBlocksTacticalMovement = true;
+
+    // Horizontal footprint used both for preview offsets and for the navigation blocker size.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Occupancy", meta = (ClampMin = "0.0", Units = "cm", AllowPrivateAccess = "true"))
+    float OccupancyRadiusCm = 55.0f;
+
+    // Vertical footprint used by the hidden navigation blocker component.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Occupancy", meta = (ClampMin = "0.0", Units = "cm", AllowPrivateAccess = "true"))
+    float OccupancyHalfHeightCm = 110.0f;
+
+    // Fine-tunes the nav blocker radius without changing the gameplay occupancy baseline.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Occupancy", meta = (Units = "cm", AllowPrivateAccess = "true"))
+    float NavigationBlockerRadiusOffsetCm = -15.0f;
+
+    // Fine-tunes the nav blocker half-height without changing the gameplay occupancy baseline.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Occupancy", meta = (Units = "cm", AllowPrivateAccess = "true"))
+    float NavigationBlockerHalfHeightOffsetCm = 0.0f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Occupancy", meta = (AllowPrivateAccess = "true"))
+    bool bOccupancySuppressed = false;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Encounter", meta = (AllowPrivateAccess = "true"))
     int32 CurrentInitiative = 0;

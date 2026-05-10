@@ -52,6 +52,8 @@ If the build fails at link time with `UnrealEditor-CRPGProject.dll` locked, clos
 - actual locomotion is driven manually through `AddMovementInput`
 - tactical camera mode and turn mode are separate systems
 - encounter flow is owned by `UTacticalTurnSubsystem`
+- occupied units in turn mode project hidden capsule-shaped nav blockers from `ACRPGBaseCharacter`
+- turn mode does not use `GlobalTimeDilation`; tactical pause is controlled by gameplay state, not slowed world time
 
 ## Troubleshooting
 
@@ -74,4 +76,5 @@ In this project, a globally shifted tactical preview was resolved by deleting an
 ## Documentation
 
 - [Docs/Overview.md](Docs/Overview.md)
+- [Docs/TACTICAL_MOVEMENT_OVERVIEW.md](Docs/TACTICAL_MOVEMENT_OVERVIEW.md)
 - [.github/copilot-instructions.md](.github/copilot-instructions.md)

@@ -5,6 +5,7 @@
 #include "Framework/Characters/CRPGBaseCharacter.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "NavigationSystem.h"
 #include "Tactical/Components/TacticalUnitComponent.h"
 
 namespace TacticalTurnEvents
@@ -14,7 +15,6 @@ namespace TacticalTurnEvents
     static const FString TacticalEncounterStarted = TEXT("tactical_encounter_started");
     static const FString TacticalRoundStarted = TEXT("tactical_round_started");
     static const FString TacticalActiveUnitChanged = TEXT("tactical_active_unit_changed");
-    static constexpr float TacticalGlobalTimeDilation = 0.001f;
 }
 
 void UTacticalTurnSubsystem::Initialize(FSubsystemCollectionBase &Collection)
@@ -61,7 +61,6 @@ void UTacticalTurnSubsystem::StartTurnMode()
     }
 
     CacheSubsystemDependencies();
-    ClearActiveUnitTimeCompensation();
 
     bIsTurnModeActive = true;
     CurrentState = ETacticalTurnState::TacticalPaused;
@@ -78,6 +77,7 @@ void UTacticalTurnSubsystem::StartTurnMode()
     RegisteredUnits.RemoveAll([](const TWeakObjectPtr<ACRPGBaseCharacter> &RegisteredUnit)
                               { return !RegisteredUnit.IsValid(); });
 
+    // Initiative order is built from characters, but the tactical data actually lives on their unit components.
     for (const TWeakObjectPtr<ACRPGBaseCharacter> &RegisteredUnit : RegisteredUnits)
     {
         if (ACRPGBaseCharacter *Character = RegisteredUnit.Get())
@@ -100,13 +100,7 @@ void UTacticalTurnSubsystem::StartTurnMode()
     bEncounterRunning = InitiativeOrder.Num() > 0;
     ActiveInitiativeIndex = bEncounterRunning ? 0 : INDEX_NONE;
     RefreshActiveUnitFromInitiative();
-
-    if (UWorld *World = GetWorld())
-    {
-        UGameplayStatics::SetGlobalTimeDilation(World, TacticalTurnEvents::TacticalGlobalTimeDilation);
-    }
-
-    ApplyActiveUnitTimeCompensation();
+    RefreshRegisteredUnitNavigationBlockers();
 
     PublishEvent(
         TacticalTurnEvents::TacticalTurnStarted,
@@ -140,13 +134,6 @@ void UTacticalTurnSubsystem::EndTurnMode()
     const int32 EndingRound = CurrentRound;
     const FString EndingUnitName = ActiveUnit.IsValid() ? ActiveUnit->GetName() : TEXT("none");
 
-    ClearActiveUnitTimeCompensation();
-
-    if (UWorld *World = GetWorld())
-    {
-        UGameplayStatics::SetGlobalTimeDilation(World, 1.0f);
-    }
-
     ActiveUnit.Reset();
     InitiativeOrder.Reset();
     ActiveInitiativeIndex = INDEX_NONE;
@@ -154,6 +141,7 @@ void UTacticalTurnSubsystem::EndTurnMode()
     bIsTurnModeActive = false;
     bEncounterRunning = false;
     CurrentRound = 0;
+    RefreshRegisteredUnitNavigationBlockers();
 
     PublishEvent(
         TacticalTurnEvents::TacticalTurnEnded,
@@ -187,7 +175,6 @@ void UTacticalTurnSubsystem::EndCurrentUnitTurn()
         CurrentActiveComponent->SetTurnCompleted(true);
     }
 
-    ClearActiveUnitTimeCompensation();
     CurrentState = ETacticalTurnState::TacticalPaused;
 
     int32 NextAliveIndex = FindNextAliveInitiativeIndex(ActiveInitiativeIndex + 1);
@@ -203,7 +190,7 @@ void UTacticalTurnSubsystem::EndCurrentUnitTurn()
     ActiveInitiativeIndex = NextAliveIndex;
     bEncounterRunning = ActiveInitiativeIndex != INDEX_NONE;
     RefreshActiveUnitFromInitiative();
-    ApplyActiveUnitTimeCompensation();
+    RefreshRegisteredUnitNavigationBlockers();
 
     if (bWrappedRound)
     {
@@ -238,6 +225,7 @@ void UTacticalTurnSubsystem::RegisterUnit(ACRPGBaseCharacter *Unit)
         return;
     }
 
+    // Late-registered units can join an already running encounter as long as they have a valid tactical component.
     if (UTacticalUnitComponent *TacticalUnitComponent = Unit->GetTacticalUnitComponent())
     {
         if (!TacticalUnitComponent->IsAlive() || InitiativeOrder.Contains(TacticalUnitComponent))
@@ -249,12 +237,13 @@ void UTacticalTurnSubsystem::RegisterUnit(ACRPGBaseCharacter *Unit)
         TacticalUnitComponent->ResetForNewRound();
         InitiativeOrder.Add(TacticalUnitComponent);
         SortInitiativeOrder();
+        Unit->UpdateTacticalOccupancyNavigationBlocker(ActiveUnit.Get());
 
         if (ActiveInitiativeIndex == INDEX_NONE)
         {
             ActiveInitiativeIndex = FindNextAliveInitiativeIndex(0);
             RefreshActiveUnitFromInitiative();
-            ApplyActiveUnitTimeCompensation();
+            RefreshRegisteredUnitNavigationBlockers();
             BroadcastActiveUnitChanged();
         }
     }
@@ -291,8 +280,6 @@ void UTacticalTurnSubsystem::UnregisterUnit(ACRPGBaseCharacter *Unit)
 
     if (ActiveUnit.Get() == Unit || ActiveInitiativeIndex == INDEX_NONE || !GetCurrentActiveUnit())
     {
-        ClearActiveUnitTimeCompensation();
-
         if (bEncounterRunning)
         {
             ActiveInitiativeIndex = FindNextAliveInitiativeIndex(FMath::Max(0, ActiveInitiativeIndex));
@@ -300,7 +287,7 @@ void UTacticalTurnSubsystem::UnregisterUnit(ACRPGBaseCharacter *Unit)
 
         bEncounterRunning = InitiativeOrder.Num() > 0 && ActiveInitiativeIndex != INDEX_NONE;
         RefreshActiveUnitFromInitiative();
-        ApplyActiveUnitTimeCompensation();
+        RefreshRegisteredUnitNavigationBlockers();
 
         if (bEncounterRunning)
         {
@@ -368,36 +355,15 @@ void UTacticalTurnSubsystem::PublishEvent(const FString &EventName, const FStrin
     }
 }
 
-void UTacticalTurnSubsystem::ApplyActiveUnitTimeCompensation()
+void UTacticalTurnSubsystem::RefreshRegisteredUnitNavigationBlockers() const
 {
-    const float UnitTimeDilation = 1.0f / TacticalTurnEvents::TacticalGlobalTimeDilation;
-
-    if (APlayerController *PlayerController = UGameplayStatics::GetPlayerController(this, 0))
-    {
-        PlayerController->CustomTimeDilation = UnitTimeDilation;
-    }
+    const ACRPGBaseCharacter *ReferenceCharacter = bIsTurnModeActive ? ActiveUnit.Get() : nullptr;
 
     for (const TWeakObjectPtr<ACRPGBaseCharacter> &RegisteredUnit : RegisteredUnits)
     {
         if (ACRPGBaseCharacter *Character = RegisteredUnit.Get())
         {
-            Character->CustomTimeDilation = UnitTimeDilation;
-        }
-    }
-}
-
-void UTacticalTurnSubsystem::ClearActiveUnitTimeCompensation()
-{
-    if (APlayerController *PlayerController = UGameplayStatics::GetPlayerController(this, 0))
-    {
-        PlayerController->CustomTimeDilation = 1.0f;
-    }
-
-    for (const TWeakObjectPtr<ACRPGBaseCharacter> &RegisteredUnit : RegisteredUnits)
-    {
-        if (ACRPGBaseCharacter *Character = RegisteredUnit.Get())
-        {
-            Character->CustomTimeDilation = 1.0f;
+            Character->UpdateTacticalOccupancyNavigationBlocker(ReferenceCharacter);
         }
     }
 }

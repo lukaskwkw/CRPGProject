@@ -45,6 +45,7 @@ void UTacticalCombatHUDWidget::RefreshFromSubsystem()
 
     float AvailableMovementForPlanningCm = 0.0f;
 
+    // Pull authoritative state from both the turn subsystem and the player controller every refresh.
     if (UTacticalTurnSubsystem *TacticalTurnSubsystem = GetTacticalTurnSubsystem())
     {
         bTurnModeEnabled = TacticalTurnSubsystem->IsTurnModeActive();
@@ -66,6 +67,7 @@ void UTacticalCombatHUDWidget::RefreshFromSubsystem()
 
     if (ACRPGProjectPlayerController *PlayerController = GetOwningCRPGPlayerController())
     {
+        // The controller exposes pending preview and planning-budget data computed by the movement component.
         const FTacticalMovePreviewData &PendingMovePreview = PlayerController->GetPendingMovePreview();
         AvailableMovementForPlanningCm = PlayerController->GetAvailableMovementBudgetForPlanningRequest();
         bHasPendingMovePreview = PendingMovePreview.bHasPreview;
@@ -82,6 +84,7 @@ void UTacticalCombatHUDWidget::OnConfirmMovePressed()
 {
     if (ACRPGProjectPlayerController *PlayerController = GetOwningCRPGPlayerController())
     {
+        // UI never moves the pawn directly; it forwards intent back to the controller/movement component.
         PlayerController->CommitPendingTacticalMoveRequest();
     }
 
