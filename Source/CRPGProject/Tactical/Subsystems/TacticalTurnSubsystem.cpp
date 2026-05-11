@@ -74,6 +74,7 @@ void UTacticalTurnSubsystem::StartTurnMode()
         RegisterUnit(ActiveCharacter);
     }
 
+    // Turn mode can be entered after actors were spawned earlier, so prune weak refs before rebuilding initiative.
     RegisteredUnits.RemoveAll([](const TWeakObjectPtr<ACRPGBaseCharacter> &RegisteredUnit)
                               { return !RegisteredUnit.IsValid(); });
 
@@ -177,6 +178,7 @@ void UTacticalTurnSubsystem::EndCurrentUnitTurn()
 
     CurrentState = ETacticalTurnState::TacticalPaused;
 
+    // Advance to the next living unit; if none remain, roll into a fresh round and try again from the top.
     int32 NextAliveIndex = FindNextAliveInitiativeIndex(ActiveInitiativeIndex + 1);
     const bool bWrappedRound = NextAliveIndex == INDEX_NONE;
 
@@ -237,6 +239,8 @@ void UTacticalTurnSubsystem::RegisterUnit(ACRPGBaseCharacter *Unit)
         TacticalUnitComponent->ResetForNewRound();
         InitiativeOrder.Add(TacticalUnitComponent);
         SortInitiativeOrder();
+
+        // Newly joined units need their nav blocker state refreshed against the current active unit immediately.
         Unit->UpdateTacticalOccupancyNavigationBlocker(ActiveUnit.Get());
 
         if (ActiveInitiativeIndex == INDEX_NONE)
@@ -258,6 +262,7 @@ void UTacticalTurnSubsystem::UnregisterUnit(ACRPGBaseCharacter *Unit)
 
     if (RemovedComponent)
     {
+        // Keep the active initiative index stable relative to the shortened array after removal.
         const int32 RemovedIndex = InitiativeOrder.IndexOfByKey(RemovedComponent);
         if (RemovedIndex != INDEX_NONE)
         {
@@ -282,6 +287,7 @@ void UTacticalTurnSubsystem::UnregisterUnit(ACRPGBaseCharacter *Unit)
     {
         if (bEncounterRunning)
         {
+            // If the active slot disappeared, resolve the next surviving unit from the current cursor position.
             ActiveInitiativeIndex = FindNextAliveInitiativeIndex(FMath::Max(0, ActiveInitiativeIndex));
         }
 
@@ -335,6 +341,11 @@ int32 UTacticalTurnSubsystem::GetCurrentRound() const
 bool UTacticalTurnSubsystem::IsEncounterRunning() const
 {
     return bEncounterRunning;
+}
+
+const TArray<TWeakObjectPtr<ACRPGBaseCharacter>> &UTacticalTurnSubsystem::GetRegisteredUnits() const
+{
+    return RegisteredUnits;
 }
 
 ACRPGBaseCharacter *UTacticalTurnSubsystem::ResolveCurrentlyPossessedUnit() const

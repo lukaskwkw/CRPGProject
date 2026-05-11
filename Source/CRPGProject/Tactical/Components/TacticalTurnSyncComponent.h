@@ -26,13 +26,14 @@ public:
 
 private:
     ACRPGProjectPlayerController *GetOwnerController() const;
+    bool CanSelectedUnitUseTurnControls() const;
 
 private:
     UPROPERTY(Transient)
     TObjectPtr<ACRPGProjectPlayerController> OwningController;
 
     UPROPERTY(Transient)
-    bool bTurnModeMovementEnabled = true;
+    bool bUserTurnModeMovementEnabled = true;
 
     UPROPERTY(Transient)
     TWeakObjectPtr<APawn> ExplorationPawnBeforeTacticalTurn;

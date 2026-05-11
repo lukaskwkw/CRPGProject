@@ -35,6 +35,7 @@ void UCameraControllerComponent::BeginPlay()
 {
     Super::BeginPlay();
 
+    // The component always derives state from the owning controller/pawn pair instead of assuming startup order.
     OwningPlayerController = Cast<APlayerController>(GetOwner());
     HandleControlledPawnChanged();
     BindToCameraModeSubsystem();
@@ -95,6 +96,7 @@ void UCameraControllerComponent::RecenterOnActivePawn()
 {
     if (APawn *Pawn = ActiveCameraMode == ECameraMode::Tactical ? GetTacticalFocusPawn() : GetControlledPawn())
     {
+        // Recenter updates the desired anchor first and only snaps the live anchor if one was never established.
         const FVector FocusLocation = GetPawnFocusLocation(Pawn);
         TargetTacticalAnchorLocation = FocusLocation;
 
@@ -103,6 +105,32 @@ void UCameraControllerComponent::RecenterOnActivePawn()
             TacticalAnchorLocation = FocusLocation;
             bHasTacticalAnchor = true;
         }
+    }
+}
+
+void UCameraControllerComponent::FocusTacticalPawn(APawn *Pawn)
+{
+    if (!OwningPlayerController || !IsValid(Pawn))
+    {
+        return;
+    }
+
+    EnsureTacticalCamera();
+    ClearTacticalRoamInput();
+
+    // Focus requests only move the tactical anchor; the real camera position still glides there in Tick.
+    const FVector FocusLocation = GetPawnFocusLocation(Pawn);
+    TargetTacticalAnchorLocation = FocusLocation;
+
+    if (!bHasTacticalAnchor)
+    {
+        TacticalAnchorLocation = FocusLocation;
+        bHasTacticalAnchor = true;
+    }
+
+    if (ActiveCameraMode == ECameraMode::Tactical && TacticalCameraActor && OwningPlayerController->GetViewTarget() != TacticalCameraActor)
+    {
+        OwningPlayerController->SetViewTargetWithBlend(TacticalCameraActor, ActiveTransition.BlendTime);
     }
 }
 
@@ -118,6 +146,7 @@ void UCameraControllerComponent::AdjustTacticalZoom(float ZoomAxisValue)
         TacticalMinimumArmLength,
         TacticalMaximumArmLength);
 
+    // Pitch is derived from zoom so wider tactical views automatically flatten toward a more top-down angle.
     UpdateTacticalPitchFromZoom();
 }
 
@@ -142,6 +171,7 @@ void UCameraControllerComponent::HandleCameraModeChanged(const FCameraModeTransi
     ActiveTransition = Transition;
     ActiveCameraMode = Transition.NewMode;
 
+    // Each mode entry function owns its own view-target transition and camera state bootstrap.
     switch (Transition.NewMode)
     {
     case ECameraMode::Tactical:
@@ -172,6 +202,7 @@ void UCameraControllerComponent::InitializeForCurrentMode()
 {
     if (!CameraModeSubsystem)
     {
+        // No subsystem means exploration defaults win so template camera behavior still works in isolation.
         ActiveCameraMode = ECameraMode::Exploration;
         EnterExplorationMode(ActiveTransition);
         return;
@@ -218,6 +249,7 @@ void UCameraControllerComponent::EnsureTacticalCamera()
         return;
     }
 
+    // Tactical view uses a transient detached camera actor so exploration spring-arm settings remain untouched.
     FActorSpawnParameters SpawnParameters;
     SpawnParameters.Owner = OwningPlayerController;
     SpawnParameters.ObjectFlags |= RF_Transient;
@@ -243,13 +275,14 @@ void UCameraControllerComponent::HandleControlledPawnChanged()
 
     if (ActiveCameraMode == ECameraMode::Exploration)
     {
+        // Exploration should always snap back to the newly possessed pawn and forget the tactical anchor entirely.
         bHasTacticalAnchor = false;
         RecenterOnActivePawn();
         EnterExplorationMode(ActiveTransition);
     }
     else if (ActiveCameraMode == ECameraMode::Tactical)
     {
-        // In tactical mode keep the existing camera yaw and current anchor, then glide toward the new active unit.
+        // In tactical mode keep the existing camera yaw and current anchor, then glide toward the newly selected focus pawn.
         RecenterOnActivePawn();
         EnsureTacticalCamera();
 
@@ -286,6 +319,7 @@ void UCameraControllerComponent::EnterTacticalMode(const FCameraModeTransition &
 
     EnsureTacticalCamera();
     RecenterOnActivePawn();
+    // Tactical mode inherits the controller yaw at entry so orbit direction stays consistent with what the player sees.
     TacticalYaw = FRotator::NormalizeAxis(OwningPlayerController->GetControlRotation().Yaw);
     TacticalSettings.Rotation.Yaw = TacticalYaw;
     TacticalAnchorLocation = TargetTacticalAnchorLocation;
@@ -355,15 +389,18 @@ void UCameraControllerComponent::UpdateTacticalCamera(float DeltaTime)
     const FVector ForwardDirection = FRotationMatrix(TacticalYawRotation).GetUnitAxis(EAxis::X);
     const FVector RightDirection = FRotationMatrix(TacticalYawRotation).GetUnitAxis(EAxis::Y);
 
+    // Roam input moves the desired anchor in camera-relative space; the actual anchor then eases toward it.
     TargetTacticalAnchorLocation += ((ForwardDirection * TacticalRoamInput.Y) + (RightDirection * TacticalRoamInput.X)) * TacticalRoamSpeed * DeltaTime;
 
     if (!bHasTacticalAnchor)
     {
+        // First tactical tick snaps anchor setup to the current focus pawn before interpolation begins.
         TargetTacticalAnchorLocation = FocusLocation;
         TacticalAnchorLocation = FocusLocation;
         bHasTacticalAnchor = true;
     }
 
+    // Two layers of interpolation are intentional: anchor smoothing for focus changes, then camera smoothing for presentation.
     TacticalAnchorLocation = FMath::VInterpTo(TacticalAnchorLocation, TargetTacticalAnchorLocation, DeltaTime, AnchorInterpSpeed);
 
     const FVector DesiredCameraLocation = TacticalAnchorLocation - Settings.Rotation.Vector() * Settings.ArmLength + Settings.TargetOffset + Settings.SocketOffset;
@@ -402,6 +439,12 @@ APawn *UCameraControllerComponent::GetTacticalFocusPawn() const
         return nullptr;
     }
 
+    // Controlled pawn wins so ally selection updates the tactical camera immediately; active unit is only a fallback.
+    if (APawn *ControlledPawn = GetControlledPawn())
+    {
+        return ControlledPawn;
+    }
+
     if (UGameInstance *GameInstance = OwningPlayerController->GetGameInstance())
     {
         if (UTacticalTurnSubsystem *TacticalTurnSubsystem = GameInstance->GetSubsystem<UTacticalTurnSubsystem>())
@@ -438,6 +481,7 @@ UCameraComponent *UCameraControllerComponent::FindControlledCamera() const
 
 FVector UCameraControllerComponent::GetPawnFocusLocation(APawn *Pawn) const
 {
+    // Camera focus can intentionally sit above the pawn origin so tactical framing is centered on the character body.
     return Pawn ? Pawn->GetActorLocation() + PawnFocusOffset : FVector::ZeroVector;
 }
 

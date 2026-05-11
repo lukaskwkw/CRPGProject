@@ -47,6 +47,19 @@ Use this file as compact current-state context for future coding chats. It is in
 - Path preview rendering is tunable for iteration
 - Movement budget consumption is synchronized with actual traversal completion
 
+## Current Tactical HUD State
+
+- `UTacticalCombatHUDWidget` now rebuilds encounter UI data on every refresh from `UTacticalTurnSubsystem` and `UTacticalUnitComponent`
+- The top initiative bar is populated from subsystem initiative order and each entry carries portrait, display name, alive state, active state, and initiative value
+- The player party panel is always available, is built from registered player-controlled units, and is not limited to turn mode
+- Party entry clicks outside turn mode can repossess a player-controlled living unit without forcing a camera mode reset
+- Temporary action buttons currently exposed are `Melee Attack`, `Ranged Attack`, and `End Turn`
+- `Melee Attack` and `Ranged Attack` publish EventBus intents; `End Turn` advances through `UTacticalTurnSubsystem::EndCurrentUnitTurn()`
+- Entry widgets are split between native C++ data delivery and Blueprint presentation: C++ creates/rebuilds children, Blueprint entry widgets render the visuals in `OnViewDataChanged`
+- Keep button click ownership in one place only; current intended setup is Blueprint button `OnClicked` wiring that calls the native widget methods, without extra native `OnClicked` auto-binding
+- Preferred future direction is to keep Blueprint limited to layout/presentation glue where practical; gameplay rules, ordering, state transitions, and action dispatch should stay in C++ or a future formalized UI state layer
+- A later WebUI direction should not materially change that split; only the presentation technology should change, not where gameplay authority lives
+
 ## Architecture Rules To Preserve
 
 - Keep gameplay systems modular and event-driven

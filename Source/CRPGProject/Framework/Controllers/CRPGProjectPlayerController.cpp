@@ -307,6 +307,127 @@ float ACRPGProjectPlayerController::GetAvailableMovementBudgetForPlanning() cons
     return TacticalMovementControllerComponent ? TacticalMovementControllerComponent->GetAvailableMovementBudgetForPlanning() : 0.0f;
 }
 
+bool ACRPGProjectPlayerController::SelectPlayerPartyUnit(ACRPGBaseCharacter *RequestedUnit)
+{
+    if (!IsLocalPlayerController() || !IsValid(RequestedUnit))
+    {
+        return false;
+    }
+
+    UTacticalUnitComponent *TacticalUnitComponent = RequestedUnit->GetTacticalUnitComponent();
+    if (!TacticalUnitComponent || !TacticalUnitComponent->IsPlayerControlled() || !TacticalUnitComponent->IsAlive())
+    {
+        return false;
+    }
+
+    // Party selection is authoritative possession, not just camera focus, so the old pawn's transient
+    // path state has to be discarded before we hand control to the newly selected ally.
+    ClearCommittedTraversalControlPoints();
+    ClearPendingTacticalMovePreviewRequest();
+
+    if (TacticalMovementControllerComponent)
+    {
+        TacticalMovementControllerComponent->ClearTacticalPathTraversal(true);
+    }
+
+    if (GetPawn() != RequestedUnit)
+    {
+        StopMovement();
+        Possess(RequestedUnit);
+    }
+
+    RefreshTacticalCombatHUD();
+    return true;
+}
+
+bool ACRPGProjectPlayerController::FocusCameraOnTacticalUnit(ACRPGBaseCharacter *RequestedUnit)
+{
+    if (!IsLocalPlayerController() || !IsValid(RequestedUnit))
+    {
+        return false;
+    }
+
+    // Camera-only focus still invalidates the current preview because the hover ray origin changes.
+    ClearPendingTacticalMovePreviewRequest();
+
+    if (CameraControllerComponent && IsTacticalModeActive())
+    {
+        CameraControllerComponent->FocusTacticalPawn(RequestedUnit);
+        return true;
+    }
+
+    SetViewTargetWithBlend(RequestedUnit, 0.0f);
+    return true;
+}
+
+bool ACRPGProjectPlayerController::SelectOrFocusTacticalUnit(ACRPGBaseCharacter *RequestedUnit)
+{
+    if (!IsLocalPlayerController() || !IsValid(RequestedUnit))
+    {
+        return false;
+    }
+
+    const UTacticalUnitComponent *TacticalUnitComponent = RequestedUnit->GetTacticalUnitComponent();
+    if (TacticalUnitComponent && TacticalUnitComponent->IsPlayerControlled() && TacticalUnitComponent->IsAlive())
+    {
+        // Allies should become the selected/possessed pawn so the HUD highlight tracks player intent.
+        return SelectPlayerPartyUnit(RequestedUnit);
+    }
+
+    if (bAllowControllingNonPlayerTacticalUnits)
+    {
+        if (UTacticalTurnSubsystem *TacticalTurnSubsystem = GetTacticalTurnSubsystem())
+        {
+            ACRPGBaseCharacter *ActiveUnit = TacticalTurnSubsystem->GetActiveUnit();
+            if (RequestedUnit == ActiveUnit && TacticalTurnSubsystem->IsTurnModeActive() && TacticalUnitComponent && TacticalUnitComponent->IsAlive())
+            {
+                // Debug enemy control is intentionally narrow: only the current active non-player unit can be
+                // repossessed, which lets testing continue without turning initiative order into free selection.
+                ClearCommittedTraversalControlPoints();
+                ClearPendingTacticalMovePreviewRequest();
+
+                if (TacticalMovementControllerComponent)
+                {
+                    TacticalMovementControllerComponent->ClearTacticalPathTraversal(true);
+                }
+
+                if (GetPawn() != RequestedUnit)
+                {
+                    StopMovement();
+                    Possess(RequestedUnit);
+                }
+
+                RefreshTacticalCombatHUD();
+                return true;
+            }
+        }
+    }
+
+    return FocusCameraOnTacticalUnit(RequestedUnit);
+}
+
+bool ACRPGProjectPlayerController::IsPointerOverTacticalHUD() const
+{
+    // The controller does not infer UI hover itself; it delegates to the HUD, which knows which widgets are actionable.
+    return TacticalCombatHUDWidget && TacticalCombatHUDWidget->IsPointerOverBlockingUI();
+}
+
+void ACRPGProjectPlayerController::NotifyTacticalUIHoverBegin()
+{
+    ++TacticalUIHoverDepth;
+    ClearPendingTacticalMovePreviewRequest();
+}
+
+void ACRPGProjectPlayerController::NotifyTacticalUIHoverEnd()
+{
+    TacticalUIHoverDepth = FMath::Max(0, TacticalUIHoverDepth - 1);
+}
+
+bool ACRPGProjectPlayerController::IsHoveringTacticalUI() const
+{
+    return TacticalUIHoverDepth > 0;
+}
+
 void ACRPGProjectPlayerController::BindToCameraModeSubsystem()
 {
     if (!IsLocalPlayerController())
@@ -432,6 +553,7 @@ void ACRPGProjectPlayerController::HandleCameraModeChanged(const FCameraModeTran
 
     if (Transition.NewMode == ECameraMode::Tactical)
     {
+        // Entering tactical mode should leave the current pawn stationary before click-to-move takes over.
         StopMovement();
         StopTacticalPrototypeMovement();
         return;
@@ -439,6 +561,7 @@ void ACRPGProjectPlayerController::HandleCameraModeChanged(const FCameraModeTran
 
     if (Transition.NewMode != ECameraMode::Tactical)
     {
+        // Leaving tactical mode clears cached roam axes so exploration input resumes from a neutral state.
         TacticalMoveForwardInput = 0.0f;
         TacticalMoveRightInput = 0.0f;
 

@@ -55,6 +55,9 @@ public:
     void RecenterOnActivePawn();
 
     UFUNCTION(BlueprintCallable, Category = "Camera|Tactical")
+    void FocusTacticalPawn(APawn *Pawn);
+
+    UFUNCTION(BlueprintCallable, Category = "Camera|Tactical")
     void AdjustTacticalZoom(float ZoomAxisValue);
 
     UFUNCTION(BlueprintCallable, Category = "Camera|Tactical")

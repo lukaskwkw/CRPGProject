@@ -52,6 +52,11 @@ If the build fails at link time with `UnrealEditor-CRPGProject.dll` locked, clos
 - actual locomotion is driven manually through `AddMovementInput`
 - tactical camera mode and turn mode are separate systems
 - encounter flow is owned by `UTacticalTurnSubsystem`
+- the tactical encounter HUD is data-driven from `UTacticalTurnSubsystem` and `UTacticalUnitComponent`
+- initiative entries are rebuilt from subsystem order; party entries are rebuilt from registered player-controlled units
+- current UMG entry widgets use a hybrid split: C++ supplies data and spawns entry widgets, Blueprint handles visual presentation in `OnViewDataChanged`
+- preferred future direction is to keep Blueprint as a thin presentation layer only; gameplay state, ordering, input handling, and actions should stay in native code or a formal UI view-model layer
+- this should remain compatible with a future WebUI path, where Blueprint would still mostly act as glue/presentation rather than a place for gameplay logic
 - occupied units in turn mode project hidden capsule-shaped nav blockers from `ACRPGBaseCharacter`
 - turn mode does not use `GlobalTimeDilation`; tactical pause is controlled by gameplay state, not slowed world time
 
@@ -78,3 +83,8 @@ In this project, a globally shifted tactical preview was resolved by deleting an
 - [Docs/Overview.md](Docs/Overview.md)
 - [Docs/TACTICAL_MOVEMENT_OVERVIEW.md](Docs/TACTICAL_MOVEMENT_OVERVIEW.md)
 - [.github/copilot-instructions.md](.github/copilot-instructions.md)
+
+## Future Improvements
+
+- keep future UMG Blueprints focused on pure presentation and layout, with as little gameplay/UI flow logic in Event Graphs as practical
+- if the project shifts more heavily toward WebUI later, the recommended split should stay similar: authoritative state and actions in C++ systems, UI technology handling presentation and interaction wiring only

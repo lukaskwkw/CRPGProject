@@ -542,8 +542,20 @@ void UTacticalMovementControllerComponent::UpdateTacticalMovePreviewFromHover()
 
     ACRPGProjectPlayerController *Controller = GetOwnerController();
     UTacticalTurnSubsystem *TacticalTurnSubsystem = GetTacticalTurnSubsystem();
+    // Preview exists only while turn mode owns input and the selected pawn is allowed to spend movement.
     if (!Controller || !TacticalTurnSubsystem || !TacticalTurnSubsystem->IsTurnModeActive() || !Controller->IsTurnModeMovementEnabled())
     {
+        if (PendingMovePreview.bHasPreview)
+        {
+            ClearPendingTacticalMovePreview();
+        }
+
+        return;
+    }
+
+    if (Controller->IsPointerOverTacticalHUD())
+    {
+        // Hover preview should disappear only over tactical controls, not because a fullscreen HUD root exists.
         if (PendingMovePreview.bHasPreview)
         {
             ClearPendingTacticalMovePreview();

@@ -52,17 +52,12 @@ void UTacticalTurnSyncComponent::HandleGameEvent(const FString &EventName, const
         if (EventName == TacticalTurnSyncEvents::TacticalTurnStarted || EventName == TacticalTurnSyncEvents::TacticalActiveUnitChanged)
         {
             SyncPossessionToActiveTacticalUnit();
-
-            const UTacticalTurnSubsystem *TacticalTurnSubsystem = Controller->GetTacticalTurnSubsystem();
-            const ACRPGBaseCharacter *ActiveUnit = TacticalTurnSubsystem ? TacticalTurnSubsystem->GetActiveUnit() : nullptr;
-            const UTacticalUnitComponent *TacticalUnitComponent = ActiveUnit ? ActiveUnit->GetTacticalUnitComponent() : nullptr;
-            bTurnModeMovementEnabled = TacticalUnitComponent && (Controller->bAllowControllingNonPlayerTacticalUnits || TacticalUnitComponent->IsPlayerControlled());
         }
 
         if (EventName == TacticalTurnSyncEvents::TacticalTurnEnded)
         {
             RestorePossessionAfterTacticalTurn();
-            bTurnModeMovementEnabled = true;
+            bUserTurnModeMovementEnabled = true;
             Controller->ClearPendingTacticalMovePreviewRequest();
         }
 
@@ -130,20 +125,20 @@ void UTacticalTurnSyncComponent::RestorePossessionAfterTacticalTurn()
 
 bool UTacticalTurnSyncComponent::IsTurnModeMovementEnabled() const
 {
-    return bTurnModeMovementEnabled;
+    return bUserTurnModeMovementEnabled && CanSelectedUnitUseTurnControls();
 }
 
 void UTacticalTurnSyncComponent::SetTurnModeMovementEnabled(bool bEnabled)
 {
     ACRPGProjectPlayerController *Controller = GetOwnerController();
-    if (!Controller || bTurnModeMovementEnabled == bEnabled)
+    if (!Controller || bUserTurnModeMovementEnabled == bEnabled)
     {
         return;
     }
 
-    bTurnModeMovementEnabled = bEnabled;
+    bUserTurnModeMovementEnabled = bEnabled;
 
-    if (!bTurnModeMovementEnabled)
+    if (!IsTurnModeMovementEnabled())
     {
         Controller->ClearPendingTacticalMovePreviewRequest();
     }
@@ -155,10 +150,34 @@ void UTacticalTurnSyncComponent::SetTurnModeMovementEnabled(bool bEnabled)
 
 void UTacticalTurnSyncComponent::ToggleTurnModeMovementEnabled()
 {
-    SetTurnModeMovementEnabled(!bTurnModeMovementEnabled);
+    SetTurnModeMovementEnabled(!bUserTurnModeMovementEnabled);
 }
 
 ACRPGProjectPlayerController *UTacticalTurnSyncComponent::GetOwnerController() const
 {
     return OwningController.Get();
+}
+
+bool UTacticalTurnSyncComponent::CanSelectedUnitUseTurnControls() const
+{
+    const ACRPGProjectPlayerController *Controller = GetOwnerController();
+    if (!Controller)
+    {
+        return false;
+    }
+
+    const UTacticalTurnSubsystem *TacticalTurnSubsystem = Controller->GetTacticalTurnSubsystem();
+    if (!TacticalTurnSubsystem || !TacticalTurnSubsystem->IsTurnModeActive())
+    {
+        return true;
+    }
+
+    const ACRPGBaseCharacter *SelectedUnit = Cast<ACRPGBaseCharacter>(Controller->GetPawn());
+    const ACRPGBaseCharacter *ActiveUnit = TacticalTurnSubsystem->GetActiveUnit();
+    const UTacticalUnitComponent *ActiveUnitComponent = ActiveUnit ? ActiveUnit->GetTacticalUnitComponent() : nullptr;
+
+    return SelectedUnit != nullptr &&
+           SelectedUnit == ActiveUnit &&
+           ActiveUnitComponent != nullptr &&
+           (Controller->bAllowControllingNonPlayerTacticalUnits || ActiveUnitComponent->IsPlayerControlled());
 }

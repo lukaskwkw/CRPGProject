@@ -23,7 +23,8 @@ public class CRPGProject : ModuleRules
 			"GameplayTags",
 			"GameplayStateTreeModule",
 			"UMG",
-			"Slate"
+			"Slate",
+			"SlateCore"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

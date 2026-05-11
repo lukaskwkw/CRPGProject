@@ -258,6 +258,59 @@ Current flow:
 ### single left click:
 
 - commits the currently hovered preview path
+
+---
+
+# 9. TACTICAL ENCOUNTER HUD (CURRENT PROTOTYPE STATE)
+
+The temporary tactical HUD has been extended into a dynamic encounter HUD driven from runtime tactical state rather than hardcoded unit references.
+
+Current native UI flow:
+
+- `UTacticalCombatHUDWidget` is still the main HUD shell owned by `ACRPGProjectPlayerController`
+- every `RefreshFromSubsystem()` rebuilds encounter data from `UTacticalTurnSubsystem` and `UTacticalUnitComponent`
+- the top initiative bar is generated from subsystem initiative order
+- the player party panel is generated from registered player-controlled units and remains available outside turn mode
+- temporary action buttons are exposed for melee, ranged, and end turn
+
+Current HUD data model per initiative entry:
+
+- portrait texture
+- display name
+- initiative value
+- alive/dead state
+- active-unit highlight state
+
+Current HUD data model per party entry:
+
+- referenced player unit
+- portrait texture
+- display name
+- alive/dead state
+- active-unit highlight state
+
+Important implementation split:
+
+- C++ owns data gathering, ordering, child widget creation, button action methods, and EventBus publishing
+- Blueprint owns the final visual layout and per-entry rendering logic in `OnViewDataChanged`
+
+This split is deliberate for the current prototype phase:
+
+- gameplay state stays authoritative in C++
+- UMG iteration on styling, layout, and per-entry visual polish stays fast
+- the eventual long-term UI direction can still move to a more formalized web/view-model stack later
+
+Current interaction notes:
+
+- clicking a party entry outside turn mode can repossess that unit if it is player-controlled and alive
+- party selection preserves the current camera mode instead of forcing exploration mode
+- button click ownership should remain single-sourced to avoid duplicate end-turn triggers; current preferred setup is Blueprint `OnClicked` calling the native widget methods
+
+Future-facing UI guideline:
+
+- when extending native UMG prototypes, prefer keeping Blueprint focused on presentation, styling, and widget composition only
+- avoid growing Event Graph logic into gameplay orchestration when the same responsibility can live in C++ systems or a cleaner view-model/state layer
+- if the project later leans more heavily into WebUI, the recommended boundary should stay the same: C++ remains authoritative for gameplay state and actions, while the UI technology remains a presentation shell
 - unit begins tactical traversal immediately
 
 This creates a much better CRPG planning feel:

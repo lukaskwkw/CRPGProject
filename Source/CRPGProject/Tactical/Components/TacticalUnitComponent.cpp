@@ -84,6 +84,16 @@ bool UTacticalUnitComponent::IsPlayerControlled() const
     return bIsPlayerControlled;
 }
 
+FString UTacticalUnitComponent::GetDisplayName() const
+{
+    return DisplayName;
+}
+
+UTexture2D *UTacticalUnitComponent::GetPortraitTexture() const
+{
+    return PortraitTexture;
+}
+
 bool UTacticalUnitComponent::IsEnemyTo(const UTacticalUnitComponent *OtherUnit) const
 {
     return OtherUnit != nullptr && OtherUnit != this && TeamId != OtherUnit->TeamId;
