@@ -5,9 +5,12 @@
 #include "AbilitySystemInterface.h"
 #include "CRPGBaseCharacter.generated.h"
 
+struct FCombatAttackResult;
+
 class UAbilitySystemComponent;
 class UCRPGAttributeSet;
 class UCapsuleComponent;
+class UTextRenderComponent;
 class UTacticalUnitComponent;
 
 UCLASS()
@@ -20,6 +23,12 @@ public:
 
 	virtual UAbilitySystemComponent *GetAbilitySystemComponent() const override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	void EnterTacticalDeathState();
+	// Controller hover targeting toggles this so combat UI can point at a world-space enemy without needing BP glue.
+	void SetCombatTargetHighlightEnabled(bool bEnabled);
+	// Emits a short-lived text label above the pawn for damage numbers, misses, and critical hits.
+	void ShowCombatAttackResult(const FCombatAttackResult &AttackResult);
 	// Mirrors UTacticalUnitComponent occupancy state into the hidden navigation blocker component.
 	void UpdateTacticalOccupancyNavigationBlocker(const ACRPGBaseCharacter *ReferenceCharacter = nullptr);
 
@@ -48,4 +57,22 @@ protected:
 	// Invisible navigation-only footprint used to mark occupied space on the dynamic navmesh.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCapsuleComponent> TacticalOccupancyNavigationBlocker;
+
+	// Lightweight code-only fallback for combat feedback until a dedicated widget/VFX presentation layer replaces it.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UTextRenderComponent> CombatFeedbackText;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "s"))
+	float CombatFeedbackDurationSeconds = 1.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
+	float CombatFeedbackHeightOffsetCm = 40.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true", ClampMin = "0", ClampMax = "255"))
+	int32 CombatTargetHighlightStencilValue = 1;
+
+	FTimerHandle CombatFeedbackHideTimerHandle;
+
+	void ShowCombatFeedbackText(const FString &Text, const FColor &Color);
+	void HideCombatFeedbackText();
 };

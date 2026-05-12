@@ -51,6 +51,9 @@ private:
     float GetReservedMovementDistanceCm() const;
     float CalculatePathDistance(const TArray<FVector> &PathPoints) const;
     void BuildTacticalMovePreview(const FVector &Destination);
+    // Reuses the regular movement-preview pipeline, but feeds it a controller-computed destination that would
+    // move the active unit into melee or ranged attack range of the hovered enemy.
+    bool TryBuildCombatTargetingPreview();
     void BuildClampedTacticalPath(const TArray<FVector> &SourcePathPoints, float MaxDistanceCm, TArray<FVector> &OutPathPoints, float &OutDistanceCm) const;
     void UpdateTacticalMovePreviewFromHover();
     void StartTacticalPathTraversal(const TArray<FVector> &PathPoints, float PendingDistanceConsumption = 0.0f);

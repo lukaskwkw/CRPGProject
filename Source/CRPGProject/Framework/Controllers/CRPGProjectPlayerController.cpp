@@ -23,6 +23,18 @@
 #include "UI/HUD/TacticalCombatHUDWidget.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 
+namespace TacticalHUDActionEvents
+{
+    static const FString MeleeAttackRequested = TEXT("melee_attack_requested");
+    static const FString RangedAttackRequested = TEXT("ranged_attack_requested");
+}
+
+namespace TacticalTurnEventNames
+{
+    static const FString TacticalTurnEnded = TEXT("tactical_turn_ended");
+    static const FString TacticalActiveUnitChanged = TEXT("tactical_active_unit_changed");
+}
+
 ACRPGProjectPlayerController::ACRPGProjectPlayerController()
 {
     // Keep orchestration components on the controller so possession changes do not discard tactical state.
@@ -59,8 +71,22 @@ void ACRPGProjectPlayerController::BeginPlay()
     }
 }
 
+void ACRPGProjectPlayerController::Tick(float DeltaSeconds)
+{
+    Super::Tick(DeltaSeconds);
+
+    if (!IsLocalPlayerController() || !IsTacticalModeActive() || CurrentTargetingMode != ECombatTargetingMode::EnemyUnit || IsHoveringTacticalUI())
+    {
+        SetHoveredCombatTarget(nullptr);
+        return;
+    }
+
+    SetHoveredCombatTarget(ResolveUnitUnderCursor());
+}
+
 void ACRPGProjectPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    ClearCombatTargetingMode();
     ClearPendingTacticalMovePreviewRequest();
     if (TacticalMovementControllerComponent)
     {
@@ -270,6 +296,13 @@ void ACRPGProjectPlayerController::HandleTacticalRightMousePressed()
         return;
     }
 
+    if (CurrentTargetingMode != ECombatTargetingMode::None)
+    {
+        ClearCombatTargetingMode();
+        RefreshTacticalCombatHUD();
+        return;
+    }
+
     if (TacticalMovementControllerComponent && TacticalMovementControllerComponent->HasActiveTacticalPath())
     {
         TacticalMovementControllerComponent->StopActiveTacticalMove(true);
@@ -296,6 +329,18 @@ void ACRPGProjectPlayerController::HandleTacticalLeftMousePressed()
 
 void ACRPGProjectPlayerController::HandleTacticalLeftClick()
 {
+    if (CurrentTargetingMode != ECombatTargetingMode::None)
+    {
+        SetHoveredCombatTarget(ResolveUnitUnderCursor());
+        if (TryExecutePendingCombatAction(HoveredTargetUnit.Get()))
+        {
+            ClearCombatTargetingMode();
+        }
+
+        RefreshTacticalCombatHUD();
+        return;
+    }
+
     if (TacticalMovementControllerComponent)
     {
         TacticalMovementControllerComponent->HandleTacticalLeftClick();
@@ -578,6 +623,27 @@ void ACRPGProjectPlayerController::HandleGameEvent(const FString &EventName, con
     {
         TacticalTurnSyncComponent->HandleGameEvent(EventName, Payload);
     }
+
+    if (EventName == TacticalHUDActionEvents::MeleeAttackRequested)
+    {
+        EnterCombatTargetingMode(ECombatActionType::MeleeAttack);
+        RefreshTacticalCombatHUD();
+        return;
+    }
+
+    if (EventName == TacticalHUDActionEvents::RangedAttackRequested)
+    {
+        EnterCombatTargetingMode(ECombatActionType::RangedAttack);
+        RefreshTacticalCombatHUD();
+        return;
+    }
+
+    if (EventName == TacticalTurnEventNames::TacticalTurnEnded || EventName == TacticalTurnEventNames::TacticalActiveUnitChanged)
+    {
+        ClearCombatTargetingMode();
+        RefreshTacticalCombatHUD();
+        return;
+    }
 }
 
 void ACRPGProjectPlayerController::SyncPossessionToActiveTacticalUnit()
@@ -599,6 +665,7 @@ void ACRPGProjectPlayerController::RestorePossessionAfterTacticalTurn()
 void ACRPGProjectPlayerController::OnPossess(APawn *InPawn)
 {
     Super::OnPossess(InPawn);
+    ClearCombatTargetingMode();
     ClearCommittedTraversalControlPoints();
     ClearPendingTacticalMovePreviewRequest();
     RefreshTacticalCombatHUD();
@@ -606,6 +673,7 @@ void ACRPGProjectPlayerController::OnPossess(APawn *InPawn)
 
 void ACRPGProjectPlayerController::OnUnPossess()
 {
+    ClearCombatTargetingMode();
     ClearCommittedTraversalControlPoints();
     ClearPendingTacticalMovePreviewRequest();
     Super::OnUnPossess();

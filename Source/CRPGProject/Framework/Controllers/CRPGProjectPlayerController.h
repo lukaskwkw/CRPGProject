@@ -3,12 +3,14 @@
 #pragma once
 
 #include "CameraModeSubsystem.h"
+#include "Combat/Types/CombatTypes.h"
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "Tactical/Movement/TacticalPathTypes.h"
 #include "CRPGProjectPlayerController.generated.h"
 
 class UCameraControllerComponent;
+class UCombatResolverSubsystem;
 class UInputMappingContext;
 class ACRPGBaseCharacter;
 class UTacticalCombatHUDWidget;
@@ -16,6 +18,7 @@ class UTacticalMovementControllerComponent;
 class UTacticalPathPreviewComponent;
 class UTacticalTurnSyncComponent;
 class UTacticalTurnSubsystem;
+class UTacticalUnitComponent;
 class UUserWidget;
 
 /**
@@ -30,6 +33,8 @@ class ACRPGProjectPlayerController : public APlayerController
     GENERATED_BODY()
 
     friend class UTacticalTurnSyncComponent;
+    friend class UTacticalMovementControllerComponent;
+    friend class UTacticalCombatHUDWidget;
 
 public:
     ACRPGProjectPlayerController();
@@ -76,6 +81,7 @@ protected:
 
     /** Gameplay initialization */
     virtual void BeginPlay() override;
+    virtual void Tick(float DeltaSeconds) override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
     /** Input mapping context setup */
@@ -144,6 +150,39 @@ protected:
     void StopTacticalPrototypeMovement();
     /** Returns true while the controller should behave in tactical camera/input mode. */
     bool IsTacticalModeActive() const;
+    /** Starts controller-owned combat targeting for the requested action. */
+    // This is the entry point from HUD intent into world-space targeting. It arms the requested action,
+    // disables regular tactical click-to-move, and lets the movement component switch from location preview
+    // into approach-to-range preview while the player hovers enemies.
+    void EnterCombatTargetingMode(ECombatActionType ActionType);
+    /** Clears controller-owned combat targeting state and restores movement gating. */
+    // This is used by RMB cancel, repeated HUD-button presses, turn ownership changes, and possession changes.
+    void ClearCombatTargetingMode();
+    /** Resolves the tactical unit currently under the cursor, if any. */
+    // Combat targeting prefers a pawn hit under the cursor, because a normal visibility trace often resolves to the floor.
+    UTacticalUnitComponent *ResolveUnitUnderCursor() const;
+    /** Applies hover-target bookkeeping and world highlight state when the cursor moves between enemies. */
+    void SetHoveredCombatTarget(UTacticalUnitComponent *NewTargetUnit);
+    /** Applies or clears world-space highlight presentation for the supplied tactical unit. */
+    void SetCombatTargetHighlight(UTacticalUnitComponent *TargetUnit, bool bEnableHighlight) const;
+    /** Returns whether the defender is a legal prototype attack target for the attacker. */
+    bool IsValidCombatTarget(const UTacticalUnitComponent *Attacker, const UTacticalUnitComponent *Defender) const;
+    /** Returns the current edge-to-edge gap between attacker and defender occupancies. */
+    float GetCombatGapToTargetCm(const UTacticalUnitComponent *Attacker, const UTacticalUnitComponent *Defender) const;
+    /** Returns whether the requested combat action is currently in range. */
+    bool IsTargetInCombatRange(const UTacticalUnitComponent *Attacker, const UTacticalUnitComponent *Defender, ECombatActionType ActionType) const;
+    /** Returns whether combat targeting currently wants approach-preview support from the movement component. */
+    bool IsCombatTargetingPreviewActive() const;
+    /** Calculates a desired world-space destination that would move the attacker into attack range. */
+    bool TryGetCombatTargetingPreviewDestination(FVector &OutDestination) const;
+    /** Attempts to resolve the currently pending attack against the supplied target. */
+    // For melee, this can either attack immediately when already in range or commit the previewed approach path first
+    // and defer the actual attack until traversal completes.
+    bool TryExecutePendingCombatAction(UTacticalUnitComponent *TargetUnit);
+    /** Handles any deferred melee follow-up after tactical traversal completes. */
+    void HandleTacticalTraversalCompleted();
+    /** Resolves the combat resolver subsystem from the current game instance. */
+    UCombatResolverSubsystem *GetCombatResolverSubsystem() const;
     virtual void OnPossess(APawn *InPawn) override;
     virtual void OnUnPossess() override;
 
@@ -204,6 +243,16 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Input|Tactical", meta = (ClampMin = "0.0", Units = "cm"))
     float TacticalMinimumCommittedMoveDistance = 5.0f;
 
+    // Small forgiveness for combat range checks so nav projection and final traversal acceptance do not leave the unit
+    // visually in range but logically a few centimeters short.
+    UPROPERTY(EditAnywhere, Category = "Input|Tactical|Combat", meta = (ClampMin = "0.0", Units = "cm"))
+    float CombatRangeToleranceCm = 20.0f;
+
+    // When plotting an approach-to-range preview, target the inside of the legal range rather than the exact threshold
+    // so a traversal that stops slightly early can still complete the intended attack.
+    UPROPERTY(EditAnywhere, Category = "Input|Tactical|Combat", meta = (ClampMin = "0.0", Units = "cm"))
+    float CombatApproachBufferCm = 25.0f;
+
     /** Debug-only escape hatch that allows repossessing the current active enemy for testing turn flow. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Debug")
     bool bAllowControllingNonPlayerTacticalUnits = false;
@@ -212,6 +261,28 @@ protected:
 
     UPROPERTY(Transient)
     TArray<FVector> CommittedTraversalControlPoints;
+
+    UPROPERTY(Transient)
+    ECombatActionType PendingCombatAction = ECombatActionType::None;
+
+    UPROPERTY(Transient)
+    ECombatTargetingMode CurrentTargetingMode = ECombatTargetingMode::None;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<UTacticalUnitComponent> HoveredTargetUnit;
+
+    UPROPERTY(Transient)
+    bool bMovementEnabledBeforeCombatTargeting = true;
+
+    // Switching melee <-> ranged while already targeting must not overwrite the pre-targeting movement state,
+    // otherwise leaving targeting can permanently restore the wrong value.
+
+    UPROPERTY(Transient)
+    ECombatActionType DeferredCombatActionAfterTraversal = ECombatActionType::None;
+
+    UPROPERTY(Transient)
+    // Stores the move-then-attack follow-up while melee closes distance through the movement component.
+    TWeakObjectPtr<UTacticalUnitComponent> DeferredCombatTargetAfterTraversal;
 
 public:
     FORCEINLINE UCameraControllerComponent *GetCameraControllerComponent() const { return CameraControllerComponent; }
@@ -301,6 +372,18 @@ public:
 
     /** Returns whether the cursor is currently interacting with tactical HUD widgets. */
     bool IsHoveringTacticalUI() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns the currently armed combat action for HUD state and debugging. */
+    ECombatActionType GetPendingCombatAction() const { return PendingCombatAction; }
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns the current combat targeting mode. */
+    ECombatTargetingMode GetCurrentCombatTargetingMode() const { return CurrentTargetingMode; }
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns the target unit most recently resolved under the cursor while targeting. */
+    UTacticalUnitComponent *GetHoveredTargetUnit() const { return HoveredTargetUnit.Get(); }
 
 private:
     UPROPERTY(Transient)

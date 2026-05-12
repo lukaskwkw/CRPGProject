@@ -1,10 +1,14 @@
 #include "CRPGBaseCharacter.h"
 #include "AbilitySystemComponent.h"
+#include "Combat/Types/CombatTypes.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/TextRenderComponent.h"
 #include "CRPGAttributeSet.h"
 #include "Engine/GameInstance.h"
+#include "Engine/CollisionProfile.h"
 #include "NavAreas/NavArea_Obstacle.h"
 #include "NavigationSystem.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Tactical/Components/TacticalUnitComponent.h"
 #include "Tactical/Subsystems/TacticalTurnSubsystem.h"
 #include "World/Navigation/TacticalTurnNavAreas.h"
@@ -18,6 +22,7 @@ ACRPGBaseCharacter::ACRPGBaseCharacter()
     AttributeSet = CreateDefaultSubobject<UCRPGAttributeSet>(TEXT("AttributeSet"));
     TacticalUnitComponent = CreateDefaultSubobject<UTacticalUnitComponent>(TEXT("TacticalUnitComponent"));
     TacticalOccupancyNavigationBlocker = CreateDefaultSubobject<UCapsuleComponent>(TEXT("TacticalOccupancyNavigationBlocker"));
+    CombatFeedbackText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("CombatFeedbackText"));
 
     if (TacticalOccupancyNavigationBlocker)
     {
@@ -31,6 +36,19 @@ ACRPGBaseCharacter::ACRPGBaseCharacter()
         TacticalOccupancyNavigationBlocker->SetCanEverAffectNavigation(false);
         TacticalOccupancyNavigationBlocker->SetAreaClassOverride(UNavArea_Obstacle::StaticClass());
     }
+
+    if (CombatFeedbackText)
+    {
+        CombatFeedbackText->SetupAttachment(GetRootComponent());
+        CombatFeedbackText->SetHorizontalAlignment(EHorizTextAligment::EHTA_Center);
+        CombatFeedbackText->SetVerticalAlignment(EVerticalTextAligment::EVRTA_TextCenter);
+        CombatFeedbackText->SetWorldSize(42.0f);
+        CombatFeedbackText->SetTextRenderColor(FColor::White);
+        CombatFeedbackText->SetHiddenInGame(true);
+        CombatFeedbackText->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        CombatFeedbackText->SetGenerateOverlapEvents(false);
+        CombatFeedbackText->SetCastShadow(false);
+    }
 }
 
 UAbilitySystemComponent *ACRPGBaseCharacter::GetAbilitySystemComponent() const
@@ -41,6 +59,12 @@ UAbilitySystemComponent *ACRPGBaseCharacter::GetAbilitySystemComponent() const
 void ACRPGBaseCharacter::BeginPlay()
 {
     Super::BeginPlay();
+
+    if (CombatFeedbackText)
+    {
+        const float CapsuleHalfHeight = GetCapsuleComponent() ? GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() : 88.0f;
+        CombatFeedbackText->SetRelativeLocation(FVector(0.0f, 0.0f, CapsuleHalfHeight + CombatFeedbackHeightOffsetCm));
+    }
 
     // Push the initial occupancy state before registering the unit so previews see the correct blocker size immediately.
     UpdateTacticalOccupancyNavigationBlocker();
@@ -67,6 +91,87 @@ void ACRPGBaseCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
     }
 
     Super::EndPlay(EndPlayReason);
+}
+
+void ACRPGBaseCharacter::EnterTacticalDeathState()
+{
+    SetCombatTargetHighlightEnabled(false);
+    HideCombatFeedbackText();
+
+    if (UCharacterMovementComponent *CharacterMovementComponent = GetCharacterMovement())
+    {
+        CharacterMovementComponent->DisableMovement();
+        CharacterMovementComponent->StopMovementImmediately();
+    }
+
+    if (UCapsuleComponent *CharacterCapsule = GetCapsuleComponent())
+    {
+        CharacterCapsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    }
+
+    if (USkeletalMeshComponent *CharacterMesh = GetMesh())
+    {
+        CharacterMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+        CharacterMesh->SetCollisionProfileName(TEXT("Ragdoll"));
+        CharacterMesh->SetAllBodiesSimulatePhysics(true);
+        CharacterMesh->WakeAllRigidBodies();
+    }
+}
+
+void ACRPGBaseCharacter::SetCombatTargetHighlightEnabled(bool bEnabled)
+{
+    if (USkeletalMeshComponent *CharacterMesh = GetMesh())
+    {
+        // This only marks the mesh for custom-depth based highlighting. The actual outline/fill look still depends
+        // on the project's post-process setup, which can now key off this stencil value.
+        CharacterMesh->SetRenderCustomDepth(bEnabled);
+        CharacterMesh->SetCustomDepthStencilValue(CombatTargetHighlightStencilValue);
+    }
+}
+
+void ACRPGBaseCharacter::ShowCombatAttackResult(const FCombatAttackResult &AttackResult)
+{
+    if (!AttackResult.bHit)
+    {
+        ShowCombatFeedbackText(TEXT("MISS"), FColor(196, 200, 208));
+        return;
+    }
+
+    if (AttackResult.bCriticalHit)
+    {
+        ShowCombatFeedbackText(FString::Printf(TEXT("CRIT %d"), AttackResult.DamageRoll), FColor(255, 180, 32));
+        return;
+    }
+
+    ShowCombatFeedbackText(FString::FromInt(AttackResult.DamageRoll), FColor(255, 96, 96));
+}
+
+void ACRPGBaseCharacter::ShowCombatFeedbackText(const FString &Text, const FColor &Color)
+{
+    if (!CombatFeedbackText)
+    {
+        return;
+    }
+
+    CombatFeedbackText->SetText(FText::FromString(Text));
+    CombatFeedbackText->SetTextRenderColor(Color);
+    CombatFeedbackText->SetHiddenInGame(false);
+
+    GetWorldTimerManager().ClearTimer(CombatFeedbackHideTimerHandle);
+    if (CombatFeedbackDurationSeconds <= 0.0f)
+    {
+        return;
+    }
+
+    GetWorldTimerManager().SetTimer(CombatFeedbackHideTimerHandle, this, &ACRPGBaseCharacter::HideCombatFeedbackText, CombatFeedbackDurationSeconds, false);
+}
+
+void ACRPGBaseCharacter::HideCombatFeedbackText()
+{
+    if (CombatFeedbackText)
+    {
+        CombatFeedbackText->SetHiddenInGame(true);
+    }
 }
 
 void ACRPGBaseCharacter::UpdateTacticalOccupancyNavigationBlocker(const ACRPGBaseCharacter *ReferenceCharacter)

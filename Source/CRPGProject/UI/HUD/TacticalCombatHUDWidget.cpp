@@ -20,6 +20,21 @@ void UTacticalCombatHUDWidget::NativeConstruct()
 {
     Super::NativeConstruct();
 
+    if (MeleeAttackButton)
+    {
+        MeleeAttackButton->OnClicked.RemoveDynamic(this, &UTacticalCombatHUDWidget::OnMeleeAttackPressed);
+        MeleeAttackButton->OnClicked.AddDynamic(this, &UTacticalCombatHUDWidget::OnMeleeAttackPressed);
+    }
+
+    if (RangedAttackButton)
+    {
+        RangedAttackButton->OnClicked.RemoveDynamic(this, &UTacticalCombatHUDWidget::OnRangedAttackPressed);
+        RangedAttackButton->OnClicked.AddDynamic(this, &UTacticalCombatHUDWidget::OnRangedAttackPressed);
+    }
+
+    // EndTurn and GoToActive are already wired in the current widget blueprint.
+    // Binding them again in native code causes those actions to fire twice.
+
     // The widget does not cache an initialization snapshot; every construct starts from authoritative gameplay state.
     RefreshFromSubsystem();
 }
@@ -149,6 +164,12 @@ void UTacticalCombatHUDWidget::RefreshFromSubsystem()
     bHasPendingMovePreview = false;
     bPendingMoveValid = false;
     bMovementEnabled = true;
+    PendingCombatAction = ECombatActionType::None;
+    CurrentCombatTargetingMode = ECombatTargetingMode::None;
+    HoveredTargetDisplayName.Reset();
+    HoveredTargetCurrentHP = 0;
+    HoveredTargetMaxHP = 0;
+    bHoveredTargetInRange = false;
     ResetEncounterWidgetData();
 
     float AvailableMovementForPlanningCm = 0.0f;
@@ -197,6 +218,26 @@ void UTacticalCombatHUDWidget::RefreshFromSubsystem()
         bMovementEnabled = PlayerController->IsTurnModeMovementEnabled();
         PlannedMoveDistanceCm = PendingMovePreview.PathDistanceCm;
         RemainingMovementAfterPlannedMoveCm = FMath::Max(0.0f, AvailableMovementForPlanningCm - PendingMovePreview.AffordablePathDistanceCm);
+        PendingCombatAction = PlayerController->GetPendingCombatAction();
+        CurrentCombatTargetingMode = PlayerController->GetCurrentCombatTargetingMode();
+
+        if (UTacticalUnitComponent *HoveredTargetUnit = PlayerController->GetHoveredTargetUnit())
+        {
+            HoveredTargetDisplayName = HoveredTargetUnit->GetDisplayName();
+            HoveredTargetCurrentHP = HoveredTargetUnit->GetCurrentHP();
+            HoveredTargetMaxHP = HoveredTargetUnit->GetMaxHP();
+
+            if (ACRPGBaseCharacter *SelectedUnit = Cast<ACRPGBaseCharacter>(PlayerController->GetPawn()))
+            {
+                if (UTacticalUnitComponent *SelectedUnitComponent = SelectedUnit->GetTacticalUnitComponent())
+                {
+                    bHoveredTargetInRange = PlayerController->IsTargetInCombatRange(
+                        SelectedUnitComponent,
+                        HoveredTargetUnit,
+                        PendingCombatAction);
+                }
+            }
+        }
     }
 
     // Blueprint redraw happens first so native child rebuilding and button-state sync both consume the same fresh data.
@@ -316,6 +357,9 @@ void UTacticalCombatHUDWidget::RebuildEncounterWidgetData(const UTacticalTurnSub
         InitiativeEntry.Initiative = UnitComponent->GetCurrentInitiative();
         InitiativeEntry.PortraitTexture = UnitComponent->GetPortraitTexture();
         InitiativeEntry.DisplayName = UnitComponent->GetDisplayName();
+        InitiativeEntry.CurrentHP = UnitComponent->GetCurrentHP();
+        InitiativeEntry.MaxHP = UnitComponent->GetMaxHP();
+        InitiativeEntry.HealthFraction = UnitComponent->GetHealthFraction();
         InitiativeEntry.bIsAlive = UnitComponent->IsAlive();
         InitiativeEntry.bIsActive = bIsActive;
         InitiativeEntries.Add(MoveTemp(InitiativeEntry));
@@ -335,6 +379,9 @@ void UTacticalCombatHUDWidget::RebuildEncounterWidgetData(const UTacticalTurnSub
         PartyEntry.Unit = Character;
         PartyEntry.PortraitTexture = UnitComponent->GetPortraitTexture();
         PartyEntry.DisplayName = UnitComponent->GetDisplayName();
+        PartyEntry.CurrentHP = UnitComponent->GetCurrentHP();
+        PartyEntry.MaxHP = UnitComponent->GetMaxHP();
+        PartyEntry.HealthFraction = UnitComponent->GetHealthFraction();
         PartyEntry.bIsAlive = UnitComponent->IsAlive();
         PartyEntry.bIsActive = Character == SelectedUnit;
         PartyEntries.Add(MoveTemp(PartyEntry));
