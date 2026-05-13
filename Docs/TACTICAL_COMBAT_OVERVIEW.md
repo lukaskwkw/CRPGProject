@@ -92,6 +92,7 @@ The base character owns world-side combat presentation and death presentation.
 - ragdoll/death transition
 - custom-depth hover highlight hook
 - overhead combat text such as `MISS`, damage amount, and `CRIT X`
+- animated floating combat text that billboards toward the screen while it fades out
 
 ## Orchestration Flow
 

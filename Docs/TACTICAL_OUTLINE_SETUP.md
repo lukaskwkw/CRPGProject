@@ -136,6 +136,259 @@ Then connect the result to `Emissive Color`.
 
 For a first pass, a plain outline color is enough.
 
+## Part 2A. Minimal Custom HLSL Alternative
+
+If the normal material graph feels too noisy, use one `Custom` node and keep the rest of the graph minimal.
+
+This version uses `CustomDepth` edge detection instead of a full multi-node stencil graph.
+
+That means:
+
+- your C++ code still decides which actor writes to custom depth
+- the material only detects silhouette edges around those marked pixels
+- the graph stays very small
+
+## Minimal graph layout
+
+Create only these nodes:
+
+1. `ScreenPosition`
+2. `Custom` node
+3. `ScalarParameter` named `OutlineThicknessPx`
+4. `VectorParameter` named `OutlineColor`
+5. `SceneTexture` node set to `CustomDepth`
+6. `SceneTexture` node set to `PostProcessInput0`
+
+Connect them like this:
+
+1. `ScreenPosition` -> use the viewport UV output into the `Custom` input named `UV`
+2. `OutlineThicknessPx` -> `Custom` input named `ThicknessPx`
+3. `OutlineColor` -> `Custom` input named `OutlineColor`
+4. `SceneTexture(CustomDepth).Color` -> `Custom` input named `DummyCustomDepth`
+5. `SceneTexture(PostProcessInput0).Color` -> `Custom` input named `DummySceneColor`
+6. `Custom` output -> `Emissive Color`
+
+Set the `Custom` node output type to `CMOT Float3`.
+
+## Custom node inputs
+
+Add these inputs to the `Custom` node:
+
+1. `UV` as `float2`
+2. `ThicknessPx` as `float`
+3. `OutlineColor` as `float3`
+4. `DummyCustomDepth` as `float4`
+5. `DummySceneColor` as `float4`
+
+## Custom node code
+
+Paste this into the `Custom` node:
+
+```hlsl
+float2 texel = View.ViewSizeAndInvSize.zw * max(1.0, ThicknessPx);
+
+// These dummy inputs force the material translator to include scene texture plumbing for this custom node.
+// Without them some UE versions fail with: use of undeclared identifier 'SceneTextureLookup'.
+float translatorKeepAlive = DummyCustomDepth.r * 0.0 + DummySceneColor.r * 0.0;
+
+float centerDepth = SceneTextureLookup(UV, 13, false).r;
+float leftDepth = SceneTextureLookup(UV + float2(-texel.x, 0.0), 13, false).r;
+float rightDepth = SceneTextureLookup(UV + float2(texel.x, 0.0), 13, false).r;
+float upDepth = SceneTextureLookup(UV + float2(0.0, -texel.y), 13, false).r;
+float downDepth = SceneTextureLookup(UV + float2(0.0, texel.y), 13, false).r;
+
+// Convert raw depth into a simple binary occupancy mask first.
+// Comparing raw custom-depth values directly tends to light up the whole character because depth changes
+// naturally across the mesh surface, not only on the silhouette.
+float centerMask = step(0.00001, centerDepth);
+float leftMask = step(0.00001, leftDepth);
+float rightMask = step(0.00001, rightDepth);
+float upMask = step(0.00001, upDepth);
+float downMask = step(0.00001, downDepth);
+
+float edgeMask = 0.0;
+edgeMask = max(edgeMask, abs(centerMask - leftMask));
+edgeMask = max(edgeMask, abs(centerMask - rightMask));
+edgeMask = max(edgeMask, abs(centerMask - upMask));
+edgeMask = max(edgeMask, abs(centerMask - downMask));
+
+float3 sceneColor = SceneTextureLookup(UV, 14, false).rgb;
+sceneColor += translatorKeepAlive;
+return lerp(sceneColor, OutlineColor, saturate(edgeMask));
+```
+
+## What those texture IDs mean
+
+In this snippet:
+
+- `13` = `CustomDepth`
+- `14` = `PostProcessInput0`
+
+That is the standard mapping used by Unreal material scene-texture lookup in post-process materials.
+
+## Recommended first parameter values
+
+Start with:
+
+1. `OutlineThicknessPx = 1.0`
+2. `OutlineColor = (1.0, 0.65, 0.1)`
+
+If the outline is too thin:
+
+1. raise `OutlineThicknessPx` to `1.5`
+2. then to `2.0` if needed
+
+## Important caveats
+
+### 1. This version keys off `CustomDepth`, not stencil categories
+
+It is ideal for a first minimal setup, but later you may still want a stencil-aware version if you need:
+
+- different colors for ally/enemy/active target
+- different outline styles per category
+
+### 2. Some engine versions need SceneTexture nodes wired into the Custom node
+
+If the material compiler complains that `SceneTextureLookup` is unknown:
+
+1. add a `SceneTexture` node set to `CustomDepth`
+2. add another `SceneTexture` node set to `PostProcessInput0`
+3. connect both of their `Color` outputs into dummy `float4` inputs on the `Custom` node
+4. keep the `translatorKeepAlive` line in the HLSL code
+5. compile again
+
+This is a common Unreal material translator quirk when using scene texture functions inside a `Custom` node.
+
+## Minimal stencil-aware follow-up
+
+Once this first version works, the next upgrade is to switch the edge detection from `CustomDepth` to `CustomStencil` and branch colors by stencil value.
+
+That makes the graph slightly more complex, but still far smaller than a fully hand-built node network.
+
+## Part 2B. Recommended Minimal CustomStencil Version
+
+For this project, this is the recommended version.
+
+Why it is better than the `CustomDepth` variant:
+
+- it produces a cleaner binary mask
+- it is much less likely to fill the whole character
+- it is better aligned with future categories such as hovered enemy, active unit, ally, or interactable
+
+The graph is almost the same as the previous `Custom` node version.
+
+## Minimal graph layout for stencil
+
+Create these nodes:
+
+1. `ScreenPosition`
+2. `Custom` node
+3. `ScalarParameter` named `OutlineThicknessPx`
+4. `VectorParameter` named `OutlineColor`
+5. `SceneTexture` node set to `CustomStencil`
+6. `SceneTexture` node set to `PostProcessInput0`
+
+Connect them like this:
+
+1. `ScreenPosition` -> viewport UV into the `Custom` input named `UV`
+2. `OutlineThicknessPx` -> `Custom` input named `ThicknessPx`
+3. `OutlineColor` -> `Custom` input named `OutlineColor`
+4. `SceneTexture(CustomStencil).Color` -> `Custom` input named `DummyCustomStencil`
+5. `SceneTexture(PostProcessInput0).Color` -> `Custom` input named `DummySceneColor`
+6. `Custom` output -> `Emissive Color`
+
+Set the `Custom` node output type to `CMOT Float3`.
+
+## Custom node inputs for stencil
+
+Add these inputs to the `Custom` node:
+
+1. `UV` as `float2`
+2. `ThicknessPx` as `float`
+3. `OutlineColor` as `float3`
+4. `DummyCustomStencil` as `float4`
+5. `DummySceneColor` as `float4`
+
+## CustomStencil HLSL code
+
+Paste this into the `Custom` node:
+
+```hlsl
+float2 texel = View.ViewSizeAndInvSize.zw * max(1.0, ThicknessPx);
+
+// Dummy inputs keep scene texture plumbing alive for the material translator.
+float translatorKeepAlive = DummyCustomStencil.r * 0.0 + DummySceneColor.r * 0.0;
+
+float centerStencil = SceneTextureLookup(UV, 25, false).r;
+float leftStencil = SceneTextureLookup(UV + float2(-texel.x, 0.0), 25, false).r;
+float rightStencil = SceneTextureLookup(UV + float2(texel.x, 0.0), 25, false).r;
+float upStencil = SceneTextureLookup(UV + float2(0.0, -texel.y), 25, false).r;
+float downStencil = SceneTextureLookup(UV + float2(0.0, texel.y), 25, false).r;
+
+// Treat any non-zero stencil as highlighted for the current prototype.
+float centerMask = step(0.00001, centerStencil);
+float leftMask = step(0.00001, leftStencil);
+float rightMask = step(0.00001, rightStencil);
+float upMask = step(0.00001, upStencil);
+float downMask = step(0.00001, downStencil);
+
+float edgeMask = 0.0;
+edgeMask = max(edgeMask, abs(centerMask - leftMask));
+edgeMask = max(edgeMask, abs(centerMask - rightMask));
+edgeMask = max(edgeMask, abs(centerMask - upMask));
+edgeMask = max(edgeMask, abs(centerMask - downMask));
+
+float3 sceneColor = DummySceneColor.rgb;
+sceneColor += translatorKeepAlive;
+return lerp(sceneColor, OutlineColor, saturate(edgeMask));
+```
+
+## Texture ID used here
+
+In Unreal Engine 5.7:
+
+- `25` = `PPI_CustomStencil`
+
+That comes directly from `MaterialSceneTextureId.h` in the engine source.
+
+## Why this version should outline only the contour
+
+This version does not compare raw depth changes.
+
+Instead it compares only a binary stencil mask:
+
+- `0` = pixel is not part of a highlighted object
+- `1` = pixel is part of a highlighted object
+
+So only pixels where the mask changes between center and neighbor become outline pixels.
+
+## Important runtime expectation
+
+This version assumes:
+
+1. the actor has `Render CustomDepth` enabled when hovered
+2. the actor writes a non-zero custom stencil value
+
+Your current code path already does this when highlight is enabled.
+
+## If you later want multiple highlight colors
+
+Right now the code uses a single stencil value, so `stencil > 0` is enough.
+
+Later you can branch by exact stencil category instead of only using non-zero mask.
+
+Example future pattern:
+
+1. `1` = hovered enemy
+2. `2` = active unit
+3. `3` = ally
+4. `4` = interactable
+
+## Additionaly
+
+To prevent flickering of outline go to material, click on biggest vertical block (named same as the filename) and change Blendable Location to "Scene Color Before DOF"
+(hope it won't affect anything else in bad manner)
+
 ## Part 3. Make it respect stencil values
 
 Right now the code writes a stencil value for hovered combat targets.
@@ -204,7 +457,15 @@ If the actor is visible in `CustomDepth` or `CustomStencil` buffer view, the C++
 
 ### The whole mesh glows instead of only edges
 
-That means your mask is probably testing `stencil > 0` but not doing neighbor edge comparison correctly.
+That usually means the shader is comparing raw `CustomDepth` values instead of a binary mask.
+
+Use this rule:
+
+1. convert each depth sample to `0` or `1` with `step`
+2. compare the center mask with neighbor masks
+3. build the outline only from those mask differences
+
+If you compare raw depth values directly, the whole character can light up because depth changes across the body even when you are not on the outer contour.
 
 ### The outline is too thin or too thick
 

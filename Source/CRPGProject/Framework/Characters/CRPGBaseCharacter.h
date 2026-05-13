@@ -22,6 +22,7 @@ public:
 	ACRPGBaseCharacter();
 
 	virtual UAbilitySystemComponent *GetAbilitySystemComponent() const override;
+	virtual void Tick(float DeltaSeconds) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
 	void EnterTacticalDeathState();
@@ -68,11 +69,22 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
 	float CombatFeedbackHeightOffsetCm = 40.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
+	float CombatFeedbackFloatDistanceCm = 45.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+	float CombatFeedbackFadeStartFraction = 0.45f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true", ClampMin = "0", ClampMax = "255"))
 	int32 CombatTargetHighlightStencilValue = 1;
 
 	FTimerHandle CombatFeedbackHideTimerHandle;
+	FVector CombatFeedbackBaseRelativeLocation = FVector::ZeroVector;
+	FColor CombatFeedbackActiveColor = FColor::White;
+	float CombatFeedbackElapsedSeconds = 0.0f;
+	bool bCombatFeedbackAnimating = false;
 
 	void ShowCombatFeedbackText(const FString &Text, const FColor &Color);
 	void HideCombatFeedbackText();
+	void UpdateCombatFeedbackPresentation(float DeltaSeconds);
 };

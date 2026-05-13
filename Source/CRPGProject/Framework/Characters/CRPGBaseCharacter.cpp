@@ -15,7 +15,8 @@
 
 ACRPGBaseCharacter::ACRPGBaseCharacter()
 {
-    PrimaryActorTick.bCanEverTick = false;
+    PrimaryActorTick.bCanEverTick = true;
+    PrimaryActorTick.bStartWithTickEnabled = false;
 
     // Base character owns the gameplay data component and the nav-only blocker so all derived pawns share the same rules.
     AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
@@ -56,6 +57,16 @@ UAbilitySystemComponent *ACRPGBaseCharacter::GetAbilitySystemComponent() const
     return AbilitySystemComponent;
 }
 
+void ACRPGBaseCharacter::Tick(float DeltaSeconds)
+{
+    Super::Tick(DeltaSeconds);
+
+    if (bCombatFeedbackAnimating)
+    {
+        UpdateCombatFeedbackPresentation(DeltaSeconds);
+    }
+}
+
 void ACRPGBaseCharacter::BeginPlay()
 {
     Super::BeginPlay();
@@ -63,7 +74,8 @@ void ACRPGBaseCharacter::BeginPlay()
     if (CombatFeedbackText)
     {
         const float CapsuleHalfHeight = GetCapsuleComponent() ? GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() : 88.0f;
-        CombatFeedbackText->SetRelativeLocation(FVector(0.0f, 0.0f, CapsuleHalfHeight + CombatFeedbackHeightOffsetCm));
+        CombatFeedbackBaseRelativeLocation = FVector(0.0f, 0.0f, CapsuleHalfHeight + CombatFeedbackHeightOffsetCm);
+        CombatFeedbackText->SetRelativeLocation(CombatFeedbackBaseRelativeLocation);
     }
 
     // Push the initial occupancy state before registering the unit so previews see the correct blocker size immediately.
@@ -154,8 +166,13 @@ void ACRPGBaseCharacter::ShowCombatFeedbackText(const FString &Text, const FColo
     }
 
     CombatFeedbackText->SetText(FText::FromString(Text));
-    CombatFeedbackText->SetTextRenderColor(Color);
+    CombatFeedbackActiveColor = Color;
+    CombatFeedbackText->SetTextRenderColor(CombatFeedbackActiveColor);
+    CombatFeedbackElapsedSeconds = 0.0f;
+    bCombatFeedbackAnimating = true;
+    CombatFeedbackText->SetRelativeLocation(CombatFeedbackBaseRelativeLocation);
     CombatFeedbackText->SetHiddenInGame(false);
+    SetActorTickEnabled(true);
 
     GetWorldTimerManager().ClearTimer(CombatFeedbackHideTimerHandle);
     if (CombatFeedbackDurationSeconds <= 0.0f)
@@ -168,10 +185,53 @@ void ACRPGBaseCharacter::ShowCombatFeedbackText(const FString &Text, const FColo
 
 void ACRPGBaseCharacter::HideCombatFeedbackText()
 {
+    bCombatFeedbackAnimating = false;
+
     if (CombatFeedbackText)
     {
         CombatFeedbackText->SetHiddenInGame(true);
+        CombatFeedbackText->SetRelativeLocation(CombatFeedbackBaseRelativeLocation);
+        CombatFeedbackText->SetTextRenderColor(CombatFeedbackActiveColor);
     }
+
+    SetActorTickEnabled(false);
+}
+
+void ACRPGBaseCharacter::UpdateCombatFeedbackPresentation(float DeltaSeconds)
+{
+    if (!CombatFeedbackText || CombatFeedbackDurationSeconds <= 0.0f)
+    {
+        return;
+    }
+
+    CombatFeedbackElapsedSeconds = FMath::Min(CombatFeedbackElapsedSeconds + DeltaSeconds, CombatFeedbackDurationSeconds);
+    const float Alpha = FMath::Clamp(CombatFeedbackElapsedSeconds / CombatFeedbackDurationSeconds, 0.0f, 1.0f);
+    const float SmoothedAlpha = FMath::InterpEaseOut(0.0f, 1.0f, Alpha, 2.0f);
+    const float HeightOffsetCm = FMath::Lerp(0.0f, CombatFeedbackFloatDistanceCm, SmoothedAlpha);
+    CombatFeedbackText->SetRelativeLocation(CombatFeedbackBaseRelativeLocation + FVector(0.0f, 0.0f, HeightOffsetCm));
+
+    if (APlayerCameraManager *CameraManager = GetWorld() ? GetWorld()->GetFirstPlayerController() ? GetWorld()->GetFirstPlayerController()->PlayerCameraManager : nullptr : nullptr)
+    {
+        FVector FacingDirection = CameraManager->GetCameraLocation() - CombatFeedbackText->GetComponentLocation();
+        if (!FacingDirection.IsNearlyZero())
+        {
+            FRotator LookRotation = FacingDirection.Rotation();
+            LookRotation.Roll = 0.0f;
+            CombatFeedbackText->SetWorldRotation(LookRotation);
+        }
+    }
+
+    const float FadeStartFraction = FMath::Clamp(CombatFeedbackFadeStartFraction, 0.0f, 1.0f);
+    float FadeAlpha = 1.0f;
+    if (Alpha > FadeStartFraction)
+    {
+        const float FadeDenominator = FMath::Max(KINDA_SMALL_NUMBER, 1.0f - FadeStartFraction);
+        FadeAlpha = 1.0f - ((Alpha - FadeStartFraction) / FadeDenominator);
+    }
+
+    FColor AnimatedColor = CombatFeedbackActiveColor;
+    AnimatedColor.A = static_cast<uint8>(FMath::RoundToInt(255.0f * FMath::Clamp(FadeAlpha, 0.0f, 1.0f)));
+    CombatFeedbackText->SetTextRenderColor(AnimatedColor);
 }
 
 void ACRPGBaseCharacter::UpdateTacticalOccupancyNavigationBlocker(const ACRPGBaseCharacter *ReferenceCharacter)
