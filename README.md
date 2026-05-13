@@ -84,6 +84,7 @@ In this project, a globally shifted tactical preview was resolved by deleting an
 
 - [Docs/Overview.md](Docs/Overview.md)
 - [Docs/TACTICAL_COMBAT_OVERVIEW.md](Docs/TACTICAL_COMBAT_OVERVIEW.md)
+- [Docs/TACTICAL_OUTLINE_SETUP.md](Docs/TACTICAL_OUTLINE_SETUP.md)
 - [Docs/TACTICAL_MOVEMENT_OVERVIEW.md](Docs/TACTICAL_MOVEMENT_OVERVIEW.md)
 - [.github/copilot-instructions.md](.github/copilot-instructions.md)
 

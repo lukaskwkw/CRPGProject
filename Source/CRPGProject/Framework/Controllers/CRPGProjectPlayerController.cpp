@@ -20,14 +20,9 @@
 #include "Tactical/Components/TacticalPathPreviewComponent.h"
 #include "Tactical/Components/TacticalTurnSyncComponent.h"
 #include "Tactical/Subsystems/TacticalTurnSubsystem.h"
+#include "UI/HUD/TacticalHUDActionEvents.h"
 #include "UI/HUD/TacticalCombatHUDWidget.h"
 #include "Widgets/Input/SVirtualJoystick.h"
-
-namespace TacticalHUDActionEvents
-{
-    static const FString MeleeAttackRequested = TEXT("melee_attack_requested");
-    static const FString RangedAttackRequested = TEXT("ranged_attack_requested");
-}
 
 namespace TacticalTurnEventNames
 {
@@ -75,7 +70,10 @@ void ACRPGProjectPlayerController::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
 
-    if (!IsLocalPlayerController() || !IsTacticalModeActive() || CurrentTargetingMode != ECombatTargetingMode::EnemyUnit || IsHoveringTacticalUI())
+    // Use the HUD's live pointer query here instead of the nested-widget hover depth counter.
+    // The counter is still useful for clearing previews on UI entry, but it can remain > 0 after button clicks
+    // while the cursor is already back over the world, which would block hover highlight updates until a click occurs.
+    if (!IsLocalPlayerController() || !IsTacticalModeActive() || CurrentTargetingMode != ECombatTargetingMode::EnemyUnit || IsPointerOverTacticalHUD())
     {
         SetHoveredCombatTarget(nullptr);
         return;
@@ -470,7 +468,7 @@ void ACRPGProjectPlayerController::NotifyTacticalUIHoverEnd()
 
 bool ACRPGProjectPlayerController::IsHoveringTacticalUI() const
 {
-    return TacticalUIHoverDepth > 0;
+    return IsPointerOverTacticalHUD();
 }
 
 void ACRPGProjectPlayerController::BindToCameraModeSubsystem()

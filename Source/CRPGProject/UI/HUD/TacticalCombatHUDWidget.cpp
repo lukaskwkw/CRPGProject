@@ -8,13 +8,8 @@
 #include "Tactical/Components/TacticalUnitComponent.h"
 #include "Tactical/Subsystems/TacticalTurnSubsystem.h"
 #include "UI/HUD/TacticalInitiativeEntryWidget.h"
+#include "UI/HUD/TacticalHUDActionEvents.h"
 #include "UI/HUD/TacticalPartyEntryWidget.h"
-
-namespace TacticalHUDActionEvents
-{
-    static const FString MeleeAttackRequested = TEXT("melee_attack_requested");
-    static const FString RangedAttackRequested = TEXT("ranged_attack_requested");
-}
 
 void UTacticalCombatHUDWidget::NativeConstruct()
 {
