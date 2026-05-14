@@ -114,6 +114,18 @@ public:
     bool IsPlayerControlled() const;
 
     UFUNCTION(BlueprintPure, Category = "Tactical|Identity")
+    /** Returns whether the unit should be treated as a player-party member for shared outline overlays. */
+    bool IsPartyMember() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Identity")
+    /** Returns whether the unit should be categorized as neutral rather than friendly or hostile. */
+    bool IsNeutral() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Identity")
+    /** Returns the numeric team identifier used for hostility and friendly-nonparty comparisons. */
+    int32 GetTeamId() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Identity")
     /** Returns the localized display name shown in tactical UI. */
     FString GetDisplayName() const;
 
@@ -190,6 +202,12 @@ protected:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Identity", meta = (AllowPrivateAccess = "true"))
     bool bIsPlayerControlled = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Identity", meta = (AllowPrivateAccess = "true"))
+    bool bIsPartyMember = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Identity", meta = (AllowPrivateAccess = "true"))
+    bool bIsNeutral = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Encounter", meta = (AllowPrivateAccess = "true"))
     bool bIsAlive = true;

@@ -182,6 +182,21 @@ bool UTacticalUnitComponent::IsPlayerControlled() const
     return bIsPlayerControlled;
 }
 
+bool UTacticalUnitComponent::IsPartyMember() const
+{
+    return bIsPartyMember;
+}
+
+bool UTacticalUnitComponent::IsNeutral() const
+{
+    return bIsNeutral;
+}
+
+int32 UTacticalUnitComponent::GetTeamId() const
+{
+    return TeamId;
+}
+
 FString UTacticalUnitComponent::GetDisplayName() const
 {
     return DisplayName;

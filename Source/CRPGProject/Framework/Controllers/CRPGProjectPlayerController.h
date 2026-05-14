@@ -15,6 +15,7 @@ class UInputMappingContext;
 class ACRPGBaseCharacter;
 class UTacticalCombatHUDWidget;
 class UTacticalMovementControllerComponent;
+class UTacticalOutlineOverlayComponent;
 class UTacticalPathPreviewComponent;
 class UTacticalTurnSyncComponent;
 class UTacticalTurnSubsystem;
@@ -78,6 +79,9 @@ protected:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Movement", meta = (AllowPrivateAccess = "true"))
     TObjectPtr<UTacticalPathPreviewComponent> TacticalPathPreviewComponent;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Outline", meta = (AllowPrivateAccess = "true"))
+    TObjectPtr<UTacticalOutlineOverlayComponent> TacticalOutlineOverlayComponent;
 
     /** Gameplay initialization */
     virtual void BeginPlay() override;

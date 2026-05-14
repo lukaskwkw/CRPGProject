@@ -2,7 +2,7 @@
 
 #include "CRPGProjectPlayerController.h"
 
-#include "CameraControllerComponent.h"
+#include "Camera/Components/CameraControllerComponent.h"
 #include "CameraModeSubsystem.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -17,6 +17,7 @@
 #include "CRPGProject.h"
 #include "Tactical/Components/TacticalUnitComponent.h"
 #include "Tactical/Components/TacticalMovementControllerComponent.h"
+#include "Tactical/Components/TacticalOutlineOverlayComponent.h"
 #include "Tactical/Components/TacticalPathPreviewComponent.h"
 #include "Tactical/Components/TacticalTurnSyncComponent.h"
 #include "Tactical/Subsystems/TacticalTurnSubsystem.h"
@@ -37,6 +38,7 @@ ACRPGProjectPlayerController::ACRPGProjectPlayerController()
     TacticalMovementControllerComponent = CreateDefaultSubobject<UTacticalMovementControllerComponent>(TEXT("TacticalMovementControllerComponent"));
     TacticalTurnSyncComponent = CreateDefaultSubobject<UTacticalTurnSyncComponent>(TEXT("TacticalTurnSyncComponent"));
     TacticalPathPreviewComponent = CreateDefaultSubobject<UTacticalPathPreviewComponent>(TEXT("TacticalPathPreviewComponent"));
+    TacticalOutlineOverlayComponent = CreateDefaultSubobject<UTacticalOutlineOverlayComponent>(TEXT("TacticalOutlineOverlayComponent"));
     bAutoManageActiveCameraTarget = false;
     PrimaryActorTick.bCanEverTick = true;
 }
@@ -49,6 +51,10 @@ void ACRPGProjectPlayerController::BeginPlay()
     SetControlledPawnTacticalInputSuppressed(IsTacticalModeActive());
     ApplyCameraModeInputState(IsTacticalModeActive() ? ECameraMode::Tactical : ECameraMode::Exploration);
     SpawnTacticalCombatHUD();
+    if (TacticalOutlineOverlayComponent)
+    {
+        TacticalOutlineOverlayComponent->RefreshWorldOutlineOverlay();
+    }
     RefreshTacticalCombatHUD();
 
     if (ShouldUseTouchControls() && IsLocalPlayerController())
@@ -73,7 +79,7 @@ void ACRPGProjectPlayerController::Tick(float DeltaSeconds)
     // Use the HUD's live pointer query here instead of the nested-widget hover depth counter.
     // The counter is still useful for clearing previews on UI entry, but it can remain > 0 after button clicks
     // while the cursor is already back over the world, which would block hover highlight updates until a click occurs.
-    if (!IsLocalPlayerController() || !IsTacticalModeActive() || CurrentTargetingMode != ECombatTargetingMode::EnemyUnit || IsPointerOverTacticalHUD())
+    if (!IsLocalPlayerController() || CurrentTargetingMode != ECombatTargetingMode::EnemyUnit || IsPointerOverTacticalHUD())
     {
         SetHoveredCombatTarget(nullptr);
         return;
@@ -116,6 +122,15 @@ void ACRPGProjectPlayerController::SetupInputComponent()
         InputComponent->BindAxisKey(EKeys::MouseX, this, &ACRPGProjectPlayerController::HandleTacticalMouseX);
         InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &ACRPGProjectPlayerController::HandleTacticalRightMousePressed);
         InputComponent->BindKey(EKeys::RightMouseButton, IE_Released, this, &ACRPGProjectPlayerController::HandleTacticalRightMouseReleased);
+        if (TacticalOutlineOverlayComponent)
+        {
+            InputComponent->BindKey(EKeys::Tilde, IE_Pressed, TacticalOutlineOverlayComponent.Get(), &UTacticalOutlineOverlayComponent::HandleUnitOutlineOverlayPressed);
+            InputComponent->BindKey(EKeys::Tilde, IE_Released, TacticalOutlineOverlayComponent.Get(), &UTacticalOutlineOverlayComponent::HandleUnitOutlineOverlayReleased);
+            InputComponent->BindKey(EKeys::LeftAlt, IE_Pressed, TacticalOutlineOverlayComponent.Get(), &UTacticalOutlineOverlayComponent::HandleInteractableOutlineOverlayPressed);
+            InputComponent->BindKey(EKeys::LeftAlt, IE_Released, TacticalOutlineOverlayComponent.Get(), &UTacticalOutlineOverlayComponent::HandleInteractableOutlineOverlayReleased);
+            InputComponent->BindKey(EKeys::RightAlt, IE_Pressed, TacticalOutlineOverlayComponent.Get(), &UTacticalOutlineOverlayComponent::HandleInteractableOutlineOverlayPressed);
+            InputComponent->BindKey(EKeys::RightAlt, IE_Released, TacticalOutlineOverlayComponent.Get(), &UTacticalOutlineOverlayComponent::HandleInteractableOutlineOverlayReleased);
+        }
         InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &ACRPGProjectPlayerController::HandleTacticalLeftMousePressed);
     }
 
@@ -636,6 +651,11 @@ void ACRPGProjectPlayerController::HandleGameEvent(const FString &EventName, con
         return;
     }
 
+    if (TacticalOutlineOverlayComponent)
+    {
+        TacticalOutlineOverlayComponent->HandleGameEvent(EventName, Payload);
+    }
+
     if (EventName == TacticalTurnEventNames::TacticalTurnEnded || EventName == TacticalTurnEventNames::TacticalActiveUnitChanged)
     {
         ClearCombatTargetingMode();
@@ -666,6 +686,10 @@ void ACRPGProjectPlayerController::OnPossess(APawn *InPawn)
     ClearCombatTargetingMode();
     ClearCommittedTraversalControlPoints();
     ClearPendingTacticalMovePreviewRequest();
+    if (TacticalOutlineOverlayComponent)
+    {
+        TacticalOutlineOverlayComponent->RefreshWorldOutlineOverlay();
+    }
     RefreshTacticalCombatHUD();
 }
 
@@ -674,6 +698,10 @@ void ACRPGProjectPlayerController::OnUnPossess()
     ClearCombatTargetingMode();
     ClearCommittedTraversalControlPoints();
     ClearPendingTacticalMovePreviewRequest();
+    if (TacticalOutlineOverlayComponent)
+    {
+        TacticalOutlineOverlayComponent->RefreshWorldOutlineOverlay();
+    }
     Super::OnUnPossess();
     RefreshTacticalCombatHUD();
 }

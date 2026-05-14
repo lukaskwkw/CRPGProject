@@ -108,6 +108,8 @@ void ACRPGBaseCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ACRPGBaseCharacter::EnterTacticalDeathState()
 {
     SetCombatTargetHighlightEnabled(false);
+    SetRuntimeOutlineCategory(ECRPGOutlineCategory::None);
+    SetOutlineExcluded(true);
     HideCombatFeedbackText();
 
     if (UCharacterMovementComponent *CharacterMovementComponent = GetCharacterMovement())
@@ -132,12 +134,92 @@ void ACRPGBaseCharacter::EnterTacticalDeathState()
 
 void ACRPGBaseCharacter::SetCombatTargetHighlightEnabled(bool bEnabled)
 {
+    bCombatTargetHighlightEnabled = bEnabled;
+    RefreshOutlinePresentation();
+}
+
+void ACRPGBaseCharacter::SetOutlineCategory(ECRPGOutlineCategory NewCategory)
+{
+    if (OutlineCategory == NewCategory)
+    {
+        return;
+    }
+
+    OutlineCategory = NewCategory;
+    RefreshOutlinePresentation();
+}
+
+void ACRPGBaseCharacter::ClearOutlineCategory()
+{
+    SetOutlineCategory(ECRPGOutlineCategory::None);
+}
+
+void ACRPGBaseCharacter::SetOutlineCategoryToPartyMember()
+{
+    SetOutlineCategory(ECRPGOutlineCategory::PartyMember);
+}
+
+void ACRPGBaseCharacter::SetOutlineCategoryToActivePartyMember()
+{
+    SetOutlineCategory(ECRPGOutlineCategory::ActivePartyMember);
+}
+
+void ACRPGBaseCharacter::SetOutlineCategoryToFriendlyNonParty()
+{
+    SetOutlineCategory(ECRPGOutlineCategory::FriendlyNonParty);
+}
+
+void ACRPGBaseCharacter::SetOutlineCategoryToNeutral()
+{
+    SetOutlineCategory(ECRPGOutlineCategory::Neutral);
+}
+
+void ACRPGBaseCharacter::SetOutlineCategoryToEnemy()
+{
+    SetOutlineCategory(ECRPGOutlineCategory::Enemy);
+}
+
+void ACRPGBaseCharacter::SetOutlineCategoryToInteractable()
+{
+    SetOutlineCategory(ECRPGOutlineCategory::Interactable);
+}
+
+void ACRPGBaseCharacter::SetRuntimeOutlineCategory(ECRPGOutlineCategory NewCategory)
+{
+    if (RuntimeOutlineCategory == NewCategory)
+    {
+        return;
+    }
+
+    RuntimeOutlineCategory = NewCategory;
+    RefreshOutlinePresentation();
+}
+
+void ACRPGBaseCharacter::SetOutlineExcluded(bool bExcluded)
+{
+    if (bOutlineExcluded == bExcluded)
+    {
+        return;
+    }
+
+    bOutlineExcluded = bExcluded;
+    RefreshOutlinePresentation();
+}
+
+void ACRPGBaseCharacter::RefreshOutlinePresentation()
+{
     if (USkeletalMeshComponent *CharacterMesh = GetMesh())
     {
-        // This only marks the mesh for custom-depth based highlighting. The actual outline/fill look still depends
-        // on the project's post-process setup, which can now key off this stencil value.
-        CharacterMesh->SetRenderCustomDepth(bEnabled);
-        CharacterMesh->SetCustomDepthStencilValue(CombatTargetHighlightStencilValue);
+        const ECRPGOutlineCategory IdleCategory = bShowOutlineCategoryWhenIdle ? OutlineCategory : ECRPGOutlineCategory::None;
+        const ECRPGOutlineCategory BaseCategory = RuntimeOutlineCategory != ECRPGOutlineCategory::None ? RuntimeOutlineCategory : IdleCategory;
+        const ECRPGOutlineCategory EffectiveCategory = bOutlineExcluded
+                                                           ? ECRPGOutlineCategory::None
+                                                           : (bCombatTargetHighlightEnabled ? ECRPGOutlineCategory::HoveredEnemy : BaseCategory);
+        const bool bEnableOutline = EffectiveCategory != ECRPGOutlineCategory::None;
+
+        // Hover combat target keeps the highest local priority, while persistent category overlays use their own stencil values.
+        CharacterMesh->SetRenderCustomDepth(bEnableOutline);
+        CharacterMesh->SetCustomDepthStencilValue(static_cast<int32>(EffectiveCategory));
     }
 }
 

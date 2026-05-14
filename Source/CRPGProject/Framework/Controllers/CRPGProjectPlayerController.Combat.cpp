@@ -15,8 +15,9 @@ void ACRPGProjectPlayerController::EnterCombatTargetingMode(ECombatActionType Ac
     ACRPGBaseCharacter *SelectedUnit = Cast<ACRPGBaseCharacter>(GetPawn());
     ACRPGBaseCharacter *ActiveUnit = TacticalTurnSubsystem ? TacticalTurnSubsystem->GetActiveUnit() : nullptr;
     UTacticalUnitComponent *SelectedUnitComponent = SelectedUnit ? SelectedUnit->GetTacticalUnitComponent() : nullptr;
+    const bool bIsTurnModeActive = TacticalTurnSubsystem && TacticalTurnSubsystem->IsTurnModeActive();
 
-    if (!TacticalTurnSubsystem || !TacticalTurnSubsystem->IsTurnModeActive() || !SelectedUnit || !SelectedUnitComponent || SelectedUnit != ActiveUnit || !SelectedUnitComponent->IsAlive())
+    if (!SelectedUnit || !SelectedUnitComponent || !SelectedUnitComponent->IsAlive() || (bIsTurnModeActive && SelectedUnit != ActiveUnit))
     {
         ClearCombatTargetingMode();
         return;
@@ -32,7 +33,7 @@ void ACRPGProjectPlayerController::EnterCombatTargetingMode(ECombatActionType Ac
     // Preserve the user's original movement-enabled state only on the first entry into targeting.
     // Switching from melee to ranged should not overwrite this snapshot with "false".
     const bool bWasAlreadyTargeting = CurrentTargetingMode == ECombatTargetingMode::EnemyUnit;
-    if (!bWasAlreadyTargeting)
+    if (!bWasAlreadyTargeting && bIsTurnModeActive)
     {
         bMovementEnabledBeforeCombatTargeting = IsTurnModeMovementEnabled();
     }
@@ -40,7 +41,10 @@ void ACRPGProjectPlayerController::EnterCombatTargetingMode(ECombatActionType Ac
     PendingCombatAction = ActionType;
     CurrentTargetingMode = ActionType == ECombatActionType::None ? ECombatTargetingMode::None : ECombatTargetingMode::EnemyUnit;
     SetHoveredCombatTarget(nullptr);
-    SetTurnModeMovementEnabled(false);
+    if (bIsTurnModeActive)
+    {
+        SetTurnModeMovementEnabled(false);
+    }
     ClearPendingTacticalMovePreviewRequest();
 }
 
@@ -49,12 +53,18 @@ void ACRPGProjectPlayerController::ClearCombatTargetingMode()
     PendingCombatAction = ECombatActionType::None;
     CurrentTargetingMode = ECombatTargetingMode::None;
     SetHoveredCombatTarget(nullptr);
-    SetTurnModeMovementEnabled(bMovementEnabledBeforeCombatTargeting);
+
+    if (UTacticalTurnSubsystem *TacticalTurnSubsystem = GetTacticalTurnSubsystem(); TacticalTurnSubsystem && TacticalTurnSubsystem->IsTurnModeActive())
+    {
+        SetTurnModeMovementEnabled(bMovementEnabledBeforeCombatTargeting);
+    }
 }
 
 bool ACRPGProjectPlayerController::IsCombatTargetingPreviewActive() const
 {
-    return CurrentTargetingMode == ECombatTargetingMode::EnemyUnit &&
+    const UTacticalTurnSubsystem *TacticalTurnSubsystem = GetTacticalTurnSubsystem();
+    return TacticalTurnSubsystem && TacticalTurnSubsystem->IsTurnModeActive() &&
+           CurrentTargetingMode == ECombatTargetingMode::EnemyUnit &&
            (PendingCombatAction == ECombatActionType::MeleeAttack || PendingCombatAction == ECombatActionType::RangedAttack);
 }
 
@@ -199,20 +209,21 @@ bool ACRPGProjectPlayerController::TryExecutePendingCombatAction(UTacticalUnitCo
     ACRPGBaseCharacter *SelectedUnit = Cast<ACRPGBaseCharacter>(GetPawn());
     ACRPGBaseCharacter *ActiveUnit = TacticalTurnSubsystem ? TacticalTurnSubsystem->GetActiveUnit() : nullptr;
     UTacticalUnitComponent *Attacker = SelectedUnit ? SelectedUnit->GetTacticalUnitComponent() : nullptr;
+    const bool bIsTurnModeActive = TacticalTurnSubsystem && TacticalTurnSubsystem->IsTurnModeActive();
 
-    if (!TacticalTurnSubsystem || !TacticalTurnSubsystem->IsTurnModeActive() || !Attacker || SelectedUnit != ActiveUnit)
+    if (!Attacker || !SelectedUnit || (bIsTurnModeActive && SelectedUnit != ActiveUnit))
     {
         return false;
     }
 
-    if (!Attacker->HasAnyActionPoints() || !IsValidCombatTarget(Attacker, TargetUnit))
+    if ((bIsTurnModeActive && !Attacker->HasAnyActionPoints()) || !IsValidCombatTarget(Attacker, TargetUnit))
     {
         return false;
     }
 
     if (!IsTargetInCombatRange(Attacker, TargetUnit, PendingCombatAction))
     {
-        if (TacticalMovementControllerComponent)
+        if (bIsTurnModeActive && TacticalMovementControllerComponent)
         {
             const FTacticalMovePreviewData &PendingMovePreview = GetPendingMovePreview();
             if (PendingMovePreview.bHasPreview && PendingMovePreview.AffordablePathPoints.Num() >= 2 && PendingMovePreview.AffordablePathDistanceCm > GetTacticalMinimumCommittedMoveDistance())
