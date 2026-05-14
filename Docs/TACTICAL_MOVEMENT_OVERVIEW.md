@@ -30,10 +30,12 @@ This is the orchestration layer.
 This is the runtime movement state machine.
 
 - On hover in turn mode, performs a nav query and builds `PendingMovePreview`.
+- On hover over a supported interactable in turn mode, computes an approach point that stops at that actor's configured use distance instead of pathing to its center.
 - Splits the preview into:
   - full path for visualization
   - affordable path for actual commit
 - On confirm click, commits only the affordable part.
+- Interactable-driven previews can be committed either by clicking near the preview destination or by clicking the hovered interactable actor itself.
 - During traversal:
   - disables RVO avoidance
   - changes pawn-vs-pawn collision to `Ignore`
@@ -70,6 +72,15 @@ This is the bridge between unit data and world navigation.
 - Keeps the blocker size and area synchronized with tactical occupancy settings.
 - Pushes blocker shape and area changes into the nav system with `FNavigationSystem::UpdateComponentData(...)` when needed.
 
+### `TacticalOutlineOverlayComponent`
+
+This is the controller-owned bridge between cursor hover and world-outline state.
+
+- Tracks held world-overlay inputs for unit and interactable categories.
+- Tracks the currently hovered interactable actor under the cursor.
+- Supplies the movement component with preview destinations for interactable approach-to-use behavior.
+- Keeps hover outline separate from authored idle outline metadata.
+
 ## Files that consume these classes
 
 ### `Source/CRPGProject/Tactical/Components/TacticalTurnSyncComponent.cpp`
@@ -97,6 +108,13 @@ This is the bridge between unit data and world navigation.
 
 - renders the preview path each tick using cached world-space points
 - colors the affordable segment differently from the over-budget segment
+
+### `Source/CRPGProject/World/Actors/OutlineInteractableActor.cpp`
+
+- provides a reusable native actor base for interactables that need outline presentation
+- exposes `InteractableDistanceCm` used by tactical approach preview
+- applies outline state across owned primitive components
+- supports hover-driven outline and held-overlay outline independently
 
 ### `Source/CRPGProject/CRPGProjectCharacter.h`
 
@@ -202,3 +220,13 @@ These are not part of the current implementation, but they are worth revisiting 
 
 6. Budget is smaller than the hovered path distance.
    Expected result: preview shows a valid affordable segment and an invalid over-budget tail; commit only moves along the affordable part.
+
+7. Cursor hovers an `AOutlineInteractableActor` with a non-zero `InteractableDistanceCm`.
+   Expected result: in turn mode the preview ends at a valid use distance from the actor rather than at its center.
+
+8. The same interactable is clicked directly instead of clicking the preview endpoint.
+   Expected result: the currently displayed preview still commits and the controlled unit starts moving.
+
+## Current limitation
+
+Approach preview and click-to-move toward interactables are implemented, but actual `use` or `interact` execution after arrival is not part of the current slice yet.

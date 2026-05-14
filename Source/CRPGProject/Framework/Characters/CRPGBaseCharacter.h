@@ -5,10 +5,26 @@
 #include "AbilitySystemInterface.h"
 #include "CRPGBaseCharacter.generated.h"
 
+struct FCombatAttackResult;
+
 class UAbilitySystemComponent;
 class UCRPGAttributeSet;
 class UCapsuleComponent;
+class UTextRenderComponent;
 class UTacticalUnitComponent;
+
+UENUM(BlueprintType)
+enum class ECRPGOutlineCategory : uint8
+{
+	None = 0 UMETA(DisplayName = "None"),
+	HoveredEnemy = 1 UMETA(DisplayName = "Hovered Enemy"),
+	PartyMember = 2 UMETA(DisplayName = "Party Member"),
+	ActivePartyMember = 3 UMETA(DisplayName = "Active Party Member"),
+	FriendlyNonParty = 4 UMETA(DisplayName = "Friendly Non-Party"),
+	Neutral = 5 UMETA(DisplayName = "Neutral"),
+	Enemy = 6 UMETA(DisplayName = "Enemy"),
+	Interactable = 7 UMETA(DisplayName = "Interactable")
+};
 
 UCLASS()
 class CRPGPROJECT_API ACRPGBaseCharacter : public ACharacter, public IAbilitySystemInterface
@@ -19,7 +35,41 @@ public:
 	ACRPGBaseCharacter();
 
 	virtual UAbilitySystemComponent *GetAbilitySystemComponent() const override;
+	virtual void Tick(float DeltaSeconds) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	void EnterTacticalDeathState();
+	// Controller hover targeting toggles this so combat UI can point at a world-space enemy without needing BP glue.
+	void SetCombatTargetHighlightEnabled(bool bEnabled);
+	// Stores the authored/default outline category configured on the asset or changed explicitly by gameplay code.
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Outline")
+	void SetOutlineCategory(ECRPGOutlineCategory NewCategory);
+	UFUNCTION(BlueprintPure, Category = "Tactical|Outline")
+	ECRPGOutlineCategory GetOutlineCategory() const { return OutlineCategory; }
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Outline")
+	void ClearOutlineCategory();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Outline")
+	void SetOutlineCategoryToPartyMember();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Outline")
+	void SetOutlineCategoryToActivePartyMember();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Outline")
+	void SetOutlineCategoryToFriendlyNonParty();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Outline")
+	void SetOutlineCategoryToNeutral();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Outline")
+	void SetOutlineCategoryToEnemy();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Outline")
+	void SetOutlineCategoryToInteractable();
+	// Stores a transient runtime override used by controller overlays without destroying the authored category.
+	void SetRuntimeOutlineCategory(ECRPGOutlineCategory NewCategory);
+	UFUNCTION(BlueprintPure, Category = "Tactical|Outline")
+	ECRPGOutlineCategory GetRuntimeOutlineCategory() const { return RuntimeOutlineCategory; }
+	// Explicit exclusion gate for invisible/hidden actors that should never participate in shared outline overlays.
+	void SetOutlineExcluded(bool bExcluded);
+	UFUNCTION(BlueprintPure, Category = "Tactical|Outline")
+	bool IsOutlineExcluded() const { return bOutlineExcluded; }
+	// Emits a short-lived text label above the pawn for damage numbers, misses, and critical hits.
+	void ShowCombatAttackResult(const FCombatAttackResult &AttackResult);
 	// Mirrors UTacticalUnitComponent occupancy state into the hidden navigation blocker component.
 	void UpdateTacticalOccupancyNavigationBlocker(const ACRPGBaseCharacter *ReferenceCharacter = nullptr);
 
@@ -48,4 +98,44 @@ protected:
 	// Invisible navigation-only footprint used to mark occupied space on the dynamic navmesh.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCapsuleComponent> TacticalOccupancyNavigationBlocker;
+
+	// Lightweight code-only fallback for combat feedback until a dedicated widget/VFX presentation layer replaces it.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UTextRenderComponent> CombatFeedbackText;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "s"))
+	float CombatFeedbackDurationSeconds = 1.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
+	float CombatFeedbackHeightOffsetCm = 40.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
+	float CombatFeedbackFloatDistanceCm = 45.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+	float CombatFeedbackFadeStartFraction = 0.45f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Outline", meta = (AllowPrivateAccess = "true"))
+	ECRPGOutlineCategory OutlineCategory = ECRPGOutlineCategory::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Outline", meta = (AllowPrivateAccess = "true"))
+	bool bShowOutlineCategoryWhenIdle = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Outline", meta = (AllowPrivateAccess = "true"))
+	bool bOutlineExcluded = false;
+
+	UPROPERTY(Transient)
+	ECRPGOutlineCategory RuntimeOutlineCategory = ECRPGOutlineCategory::None;
+
+	FTimerHandle CombatFeedbackHideTimerHandle;
+	FVector CombatFeedbackBaseRelativeLocation = FVector::ZeroVector;
+	FColor CombatFeedbackActiveColor = FColor::White;
+	float CombatFeedbackElapsedSeconds = 0.0f;
+	bool bCombatTargetHighlightEnabled = false;
+	bool bCombatFeedbackAnimating = false;
+
+	void RefreshOutlinePresentation();
+	void ShowCombatFeedbackText(const FString &Text, const FColor &Color);
+	void HideCombatFeedbackText();
+	void UpdateCombatFeedbackPresentation(float DeltaSeconds);
 };

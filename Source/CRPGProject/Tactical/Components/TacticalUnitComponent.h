@@ -14,6 +14,8 @@ class CRPGPROJECT_API UTacticalUnitComponent : public UActorComponent
 public:
     UTacticalUnitComponent();
 
+    virtual void BeginPlay() override;
+
     // Logical occupancy is the gameplay-level source of truth used by preview/pathing and nav blockers.
     UFUNCTION(BlueprintPure, Category = "Tactical|Occupancy")
     /** Returns whether this unit should currently reserve tactical space. */
@@ -47,6 +49,62 @@ public:
     /** Restores per-round tactical resources at the start of a new round. */
     void ResetForNewRound();
 
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns whether the unit has been reduced to zero HP. */
+    bool IsDead() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+    /** Applies prototype combat damage and triggers death when HP reaches zero. */
+    void ApplyDamage(int32 DamageAmount);
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns the current hit point value used by the prototype combat layer. */
+    int32 GetCurrentHP() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns the maximum hit point value used by the prototype combat layer. */
+    int32 GetMaxHP() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns the normalized HP fraction for UI bars and tooltips. */
+    float GetHealthFraction() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns the armor class used by d20 hit resolution. */
+    int32 GetArmorClass() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns the melee attack bonus added to the d20 roll. */
+    int32 GetMeleeAttackBonus() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns the ranged attack bonus added to the d20 roll. */
+    int32 GetRangedAttackBonus() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns the minimum melee damage roll. */
+    int32 GetMeleeDamageMin() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns the maximum melee damage roll. */
+    int32 GetMeleeDamageMax() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns the minimum ranged damage roll. */
+    int32 GetRangedDamageMin() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns the maximum ranged damage roll. */
+    int32 GetRangedDamageMax() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat", meta = (Units = "cm"))
+    /** Returns the melee attack range used by controller targeting validation. */
+    float GetMeleeRangeCm() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat", meta = (Units = "cm"))
+    /** Returns the ranged attack range used by controller targeting validation. */
+    float GetRangedRangeCm() const;
+
     UFUNCTION(BlueprintPure, Category = "Tactical|Encounter")
     /** Returns whether this unit can still participate in the current encounter. */
     bool IsAlive() const;
@@ -54,6 +112,18 @@ public:
     UFUNCTION(BlueprintPure, Category = "Tactical|Identity")
     /** Returns whether the unit belongs to the player's party. */
     bool IsPlayerControlled() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Identity")
+    /** Returns whether the unit should be treated as a player-party member for shared outline overlays. */
+    bool IsPartyMember() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Identity")
+    /** Returns whether the unit should be categorized as neutral rather than friendly or hostile. */
+    bool IsNeutral() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Identity")
+    /** Returns the numeric team identifier used for hostility and friendly-nonparty comparisons. */
+    int32 GetTeamId() const;
 
     UFUNCTION(BlueprintPure, Category = "Tactical|Identity")
     /** Returns the localized display name shown in tactical UI. */
@@ -111,6 +181,14 @@ public:
     /** Returns the current bonus action point count. */
     int32 GetBonusActionPoints() const;
 
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns whether the unit can currently spend one prototype combat action point. */
+    bool HasAnyActionPoints() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+    /** Consumes one prototype combat action point, preferring the primary pool. */
+    bool ConsumeActionPoint();
+
     UFUNCTION(BlueprintPure, Category = "Tactical")
     /** Returns whether the unit has exhausted its movement budget this turn. */
     bool HasTurnConsumed() const;
@@ -125,8 +203,49 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Identity", meta = (AllowPrivateAccess = "true"))
     bool bIsPlayerControlled = true;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Identity", meta = (AllowPrivateAccess = "true"))
+    bool bIsPartyMember = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Identity", meta = (AllowPrivateAccess = "true"))
+    bool bIsNeutral = false;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Encounter", meta = (AllowPrivateAccess = "true"))
     bool bIsAlive = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Combat", meta = (ClampMin = "1", AllowPrivateAccess = "true"))
+    // Prototype combat currently lives here rather than in GAS so the first tactical vertical slice stays self-contained.
+    int32 MaxHP = 60;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Combat", meta = (ClampMin = "0", AllowPrivateAccess = "true"))
+    int32 CurrentHP = 60;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Combat", meta = (ClampMin = "1", AllowPrivateAccess = "true"))
+    int32 ArmorClass = 12;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true"))
+    int32 MeleeAttackBonus = 5;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true"))
+    int32 RangedAttackBonus = 3;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Combat", meta = (ClampMin = "0", AllowPrivateAccess = "true"))
+    int32 MeleeDamageMin = 4;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Combat", meta = (ClampMin = "0", AllowPrivateAccess = "true"))
+    int32 MeleeDamageMax = 8;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Combat", meta = (ClampMin = "0", AllowPrivateAccess = "true"))
+    int32 RangedDamageMin = 3;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Combat", meta = (ClampMin = "0", AllowPrivateAccess = "true"))
+    int32 RangedDamageMax = 6;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Combat", meta = (ClampMin = "0.0", Units = "cm", AllowPrivateAccess = "true"))
+    // Range is consumed only for targeting validation and approach-preview calculations.
+    float MeleeRangeCm = 175.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Combat", meta = (ClampMin = "0.0", Units = "cm", AllowPrivateAccess = "true"))
+    float RangedRangeCm = 1200.0f;
 
     // If false, the unit still exists in initiative order but does not reserve tactical space.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Occupancy", meta = (AllowPrivateAccess = "true"))

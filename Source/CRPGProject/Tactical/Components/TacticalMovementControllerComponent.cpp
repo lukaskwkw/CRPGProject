@@ -9,9 +9,11 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "NavigationPath.h"
 #include "NavigationSystem.h"
+#include "Tactical/Components/TacticalOutlineOverlayComponent.h"
 #include "Tactical/Components/TacticalPathPreviewComponent.h"
 #include "Tactical/Components/TacticalUnitComponent.h"
 #include "Tactical/Subsystems/TacticalTurnSubsystem.h"
+#include "World/Actors/OutlineInteractableActor.h"
 
 namespace TacticalMovementEvents
 {
@@ -41,9 +43,21 @@ void UTacticalMovementControllerComponent::TickComponent(float DeltaTime, ELevel
 {
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-    // Preview generation and traversal updates intentionally coexist here so hover feedback and active motion
-    // stay in sync with the same controller/camera state each frame.
+    // Traversal runs first so movement state stays authoritative for the frame.
     UpdateTacticalPathTraversal(DeltaTime);
+
+    // Rebuilding hover-preview every tick while the pawn is already traversing a path adds heavy nav churn and can
+    // destabilize the move-then-attack flow. Active traversal owns the frame until it completes.
+    if (bHasActiveTacticalPath)
+    {
+        if (PendingMovePreview.bHasPreview)
+        {
+            ClearPendingTacticalMovePreview();
+        }
+
+        return;
+    }
+
     UpdateTacticalMovePreviewFromHover();
 }
 
@@ -84,7 +98,7 @@ void UTacticalMovementControllerComponent::HandleTacticalLeftClick()
                 StopActiveTacticalMove(true);
             }
 
-            if (!PendingMovePreview.bHasPreview || !IsClickNearPendingDestination(ClickedLocation))
+            if (!PendingMovePreview.bHasPreview || (!IsClickNearPendingDestination(ClickedLocation) && !IsClickOnHoveredInteractable(HitResult)))
             {
                 return;
             }
@@ -403,6 +417,29 @@ bool UTacticalMovementControllerComponent::IsClickNearPendingDestination(const F
     return PendingMovePreview.bHasPreview && FVector::Dist2D(PendingMovePreview.Destination, ClickedLocation) <= 100.0f;
 }
 
+bool UTacticalMovementControllerComponent::IsClickOnHoveredInteractable(const FHitResult &HitResult) const
+{
+    const ACRPGProjectPlayerController *Controller = GetOwnerController();
+    if (!Controller || !Controller->TacticalOutlineOverlayComponent || !PendingMovePreview.bHasPreview)
+    {
+        return false;
+    }
+
+    const AOutlineInteractableActor *HoveredInteractable = Controller->TacticalOutlineOverlayComponent->GetHoveredInteractableActor();
+    if (!HoveredInteractable)
+    {
+        return false;
+    }
+
+    AActor *HitActor = HitResult.GetActor();
+    if (!HitActor && HitResult.Component.IsValid())
+    {
+        HitActor = HitResult.Component->GetOwner();
+    }
+
+    return HitActor == HoveredInteractable;
+}
+
 float UTacticalMovementControllerComponent::GetReservedMovementDistanceCm() const
 {
     return bHasActiveTacticalPath ? FMath::Max(0.0f, ActiveTraversalTravelledDistanceCm) : 0.0f;
@@ -423,7 +460,9 @@ float UTacticalMovementControllerComponent::CalculatePathDistance(const TArray<F
 void UTacticalMovementControllerComponent::BuildTacticalMovePreview(const FVector &Destination)
 {
     ACRPGProjectPlayerController *Controller = GetOwnerController();
-    if (!Controller || !Controller->IsTurnModeMovementEnabled())
+    // Combat targeting preview is allowed even while regular click-to-move is disabled, because targeting intentionally
+    // borrows the preview renderer without re-enabling free movement input.
+    if (!Controller || (!Controller->IsTurnModeMovementEnabled() && !Controller->IsCombatTargetingPreviewActive()))
     {
         ClearPendingTacticalMovePreview();
         return;
@@ -494,6 +533,49 @@ void UTacticalMovementControllerComponent::BuildTacticalMovePreview(const FVecto
     RefreshTacticalCombatHUD();
 }
 
+bool UTacticalMovementControllerComponent::TryBuildCombatTargetingPreview()
+{
+    ACRPGProjectPlayerController *Controller = GetOwnerController();
+    if (!Controller || !Controller->IsCombatTargetingPreviewActive())
+    {
+        return false;
+    }
+
+    // The controller owns combat intent and target validation; the movement component only asks for a preview destination
+    // and then routes to that point through the normal navmesh-based preview stack.
+    FVector PreviewDestination = FVector::ZeroVector;
+    if (!Controller->TryGetCombatTargetingPreviewDestination(PreviewDestination))
+    {
+        if (PendingMovePreview.bHasPreview)
+        {
+            ClearPendingTacticalMovePreview();
+        }
+
+        return true;
+    }
+
+    BuildTacticalMovePreview(PreviewDestination);
+    return true;
+}
+
+bool UTacticalMovementControllerComponent::TryBuildInteractableHoverPreview()
+{
+    ACRPGProjectPlayerController *Controller = GetOwnerController();
+    if (!Controller || !Controller->TacticalOutlineOverlayComponent)
+    {
+        return false;
+    }
+
+    FVector PreviewDestination = FVector::ZeroVector;
+    if (!Controller->TacticalOutlineOverlayComponent->TryGetHoveredInteractablePreviewDestination(PreviewDestination))
+    {
+        return false;
+    }
+
+    BuildTacticalMovePreview(PreviewDestination);
+    return true;
+}
+
 void UTacticalMovementControllerComponent::BuildClampedTacticalPath(const TArray<FVector> &SourcePathPoints, float MaxDistanceCm, TArray<FVector> &OutPathPoints, float &OutDistanceCm) const
 {
     // Clamp by exact traveled distance so the affordable preview stops at the true movement budget breakpoint.
@@ -543,7 +625,28 @@ void UTacticalMovementControllerComponent::UpdateTacticalMovePreviewFromHover()
     ACRPGProjectPlayerController *Controller = GetOwnerController();
     UTacticalTurnSubsystem *TacticalTurnSubsystem = GetTacticalTurnSubsystem();
     // Preview exists only while turn mode owns input and the selected pawn is allowed to spend movement.
-    if (!Controller || !TacticalTurnSubsystem || !TacticalTurnSubsystem->IsTurnModeActive() || !Controller->IsTurnModeMovementEnabled())
+    if (!Controller || !TacticalTurnSubsystem || !TacticalTurnSubsystem->IsTurnModeActive())
+    {
+        if (PendingMovePreview.bHasPreview)
+        {
+            ClearPendingTacticalMovePreview();
+        }
+
+        return;
+    }
+
+    // Combat targeting gets first claim over hover preview so enemy hover does not fall through to regular move preview.
+    if (TryBuildCombatTargetingPreview())
+    {
+        return;
+    }
+
+    if (TryBuildInteractableHoverPreview())
+    {
+        return;
+    }
+
+    if (!Controller->IsTurnModeMovementEnabled())
     {
         if (PendingMovePreview.bHasPreview)
         {
@@ -725,6 +828,13 @@ void UTacticalMovementControllerComponent::HandleTacticalPathTraversalCompleted(
                 }
             }
         }
+    }
+
+    if (Controller)
+    {
+        // Normal movement budget is consumed here first; only after that does the controller get a chance to resume
+        // a deferred melee attack against the original target.
+        Controller->HandleTacticalTraversalCompleted();
     }
 
     RefreshTacticalCombatHUD();

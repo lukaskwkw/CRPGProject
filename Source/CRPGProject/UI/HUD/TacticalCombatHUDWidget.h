@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Combat/Types/CombatTypes.h"
 #include "Tactical/Subsystems/TacticalTurnSubsystem.h"
 #include "TacticalCombatHUDWidget.generated.h"
 
@@ -44,6 +45,15 @@ struct CRPGPROJECT_API FTacticalInitiativeEntryViewData
     FString DisplayName;
 
     UPROPERTY(BlueprintReadOnly, Category = "Tactical|HUD")
+    int32 CurrentHP = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Tactical|HUD")
+    int32 MaxHP = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Tactical|HUD")
+    float HealthFraction = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Tactical|HUD")
     bool bIsAlive = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Tactical|HUD")
@@ -63,6 +73,15 @@ struct CRPGPROJECT_API FTacticalPartyEntryViewData
 
     UPROPERTY(BlueprintReadOnly, Category = "Tactical|HUD")
     FString DisplayName;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Tactical|HUD")
+    int32 CurrentHP = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Tactical|HUD")
+    int32 MaxHP = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Tactical|HUD")
+    float HealthFraction = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category = "Tactical|HUD")
     bool bIsAlive = false;
@@ -195,6 +214,24 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Tactical|HUD")
     TArray<FTacticalActionEntryViewData> ActionEntries;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Tactical|Combat")
+    ECombatActionType PendingCombatAction = ECombatActionType::None;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Tactical|Combat")
+    ECombatTargetingMode CurrentCombatTargetingMode = ECombatTargetingMode::None;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Tactical|Combat")
+    FString HoveredTargetDisplayName;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Tactical|Combat")
+    int32 HoveredTargetCurrentHP = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Tactical|Combat")
+    int32 HoveredTargetMaxHP = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Tactical|Combat")
+    bool bHoveredTargetInRange = false;
 
     UFUNCTION(BlueprintImplementableEvent, Category = "Tactical|HUD")
     void OnTacticalCombatDataRefreshed();

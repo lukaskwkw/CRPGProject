@@ -181,13 +181,27 @@ For the possessed player character, use the NavigationSystem only for path calcu
 
 Additionally, implement hover-based path preview for tactical movement UX. Use click to commit actions and allow over-budget clicks by clamping traversal to the affordable portion while distinctly previewing over-budget segments.
 
+When hover preview is driven by a target object rather than raw terrain, the click commit path must still honor that preview. Do not require users to click the exact offset destination if the preview was generated from a hovered enemy or interactable actor.
+
 For occupied tactical space, prefer dynamic nav modifiers owned by `ACRPGBaseCharacter` over bespoke preview avoidance logic. The shared blocker should stay hidden, nav-only, and capsule-shaped so turn-mode occupancy reads closer to the character footprint than a square box.
 
 Do not use `GlobalTimeDilation` to simulate tactical pause. Turn mode should keep normal world time and rely on subsystem state, possession changes, movement gating, and nav blockers instead of slowing the entire world.
 
+Interactable approach preview belongs in the tactical movement pipeline, but outline state and hover detection belong in controller-owned helper components rather than being expanded directly inside `ACRPGProjectPlayerController`.
+
 ---
 
-## 14. Source Folder Architecture Rules
+## 14. Tactical Outline And Interactable Rules
+
+- Keep one shared `CustomStencil`-driven outline pipeline rather than separate rendering paths for units and interactables.
+- Distinguish authored outline category metadata from transient runtime overlay state.
+- `None` must mean "never highlight from held category overlay", not "fallback to inferred team color".
+- Prefer reusable native bases such as `AOutlineInteractableActor` for world interactables that need hover outline support.
+- Global hover outline and held overlay behavior may work outside turn mode, but tactical path preview and movement commit behavior should stay explicitly scoped when that is the intended UX.
+
+---
+
+## 15. Source Folder Architecture Rules
 
 Never place new gameplay classes in Source/CRPGProject root.
 
