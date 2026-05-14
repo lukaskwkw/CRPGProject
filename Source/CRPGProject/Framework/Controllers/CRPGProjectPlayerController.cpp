@@ -76,6 +76,18 @@ void ACRPGProjectPlayerController::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
 
+    if (TacticalOutlineOverlayComponent)
+    {
+        if (CurrentTargetingMode == ECombatTargetingMode::EnemyUnit)
+        {
+            TacticalOutlineOverlayComponent->ClearHoveredInteractable();
+        }
+        else
+        {
+            TacticalOutlineOverlayComponent->UpdateHoveredInteractableFromCursor();
+        }
+    }
+
     // Use the HUD's live pointer query here instead of the nested-widget hover depth counter.
     // The counter is still useful for clearing previews on UI entry, but it can remain > 0 after button clicks
     // while the cursor is already back over the world, which would block hover highlight updates until a click occurs.
@@ -90,6 +102,11 @@ void ACRPGProjectPlayerController::Tick(float DeltaSeconds)
 
 void ACRPGProjectPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    if (TacticalOutlineOverlayComponent)
+    {
+        TacticalOutlineOverlayComponent->ClearHoveredInteractable();
+    }
+
     ClearCombatTargetingMode();
     ClearPendingTacticalMovePreviewRequest();
     if (TacticalMovementControllerComponent)

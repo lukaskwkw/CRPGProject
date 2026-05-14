@@ -9,9 +9,11 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "NavigationPath.h"
 #include "NavigationSystem.h"
+#include "Tactical/Components/TacticalOutlineOverlayComponent.h"
 #include "Tactical/Components/TacticalPathPreviewComponent.h"
 #include "Tactical/Components/TacticalUnitComponent.h"
 #include "Tactical/Subsystems/TacticalTurnSubsystem.h"
+#include "World/Actors/OutlineInteractableActor.h"
 
 namespace TacticalMovementEvents
 {
@@ -96,7 +98,7 @@ void UTacticalMovementControllerComponent::HandleTacticalLeftClick()
                 StopActiveTacticalMove(true);
             }
 
-            if (!PendingMovePreview.bHasPreview || !IsClickNearPendingDestination(ClickedLocation))
+            if (!PendingMovePreview.bHasPreview || (!IsClickNearPendingDestination(ClickedLocation) && !IsClickOnHoveredInteractable(HitResult)))
             {
                 return;
             }
@@ -415,6 +417,29 @@ bool UTacticalMovementControllerComponent::IsClickNearPendingDestination(const F
     return PendingMovePreview.bHasPreview && FVector::Dist2D(PendingMovePreview.Destination, ClickedLocation) <= 100.0f;
 }
 
+bool UTacticalMovementControllerComponent::IsClickOnHoveredInteractable(const FHitResult &HitResult) const
+{
+    const ACRPGProjectPlayerController *Controller = GetOwnerController();
+    if (!Controller || !Controller->TacticalOutlineOverlayComponent || !PendingMovePreview.bHasPreview)
+    {
+        return false;
+    }
+
+    const AOutlineInteractableActor *HoveredInteractable = Controller->TacticalOutlineOverlayComponent->GetHoveredInteractableActor();
+    if (!HoveredInteractable)
+    {
+        return false;
+    }
+
+    AActor *HitActor = HitResult.GetActor();
+    if (!HitActor && HitResult.Component.IsValid())
+    {
+        HitActor = HitResult.Component->GetOwner();
+    }
+
+    return HitActor == HoveredInteractable;
+}
+
 float UTacticalMovementControllerComponent::GetReservedMovementDistanceCm() const
 {
     return bHasActiveTacticalPath ? FMath::Max(0.0f, ActiveTraversalTravelledDistanceCm) : 0.0f;
@@ -533,6 +558,24 @@ bool UTacticalMovementControllerComponent::TryBuildCombatTargetingPreview()
     return true;
 }
 
+bool UTacticalMovementControllerComponent::TryBuildInteractableHoverPreview()
+{
+    ACRPGProjectPlayerController *Controller = GetOwnerController();
+    if (!Controller || !Controller->TacticalOutlineOverlayComponent)
+    {
+        return false;
+    }
+
+    FVector PreviewDestination = FVector::ZeroVector;
+    if (!Controller->TacticalOutlineOverlayComponent->TryGetHoveredInteractablePreviewDestination(PreviewDestination))
+    {
+        return false;
+    }
+
+    BuildTacticalMovePreview(PreviewDestination);
+    return true;
+}
+
 void UTacticalMovementControllerComponent::BuildClampedTacticalPath(const TArray<FVector> &SourcePathPoints, float MaxDistanceCm, TArray<FVector> &OutPathPoints, float &OutDistanceCm) const
 {
     // Clamp by exact traveled distance so the affordable preview stops at the true movement budget breakpoint.
@@ -594,6 +637,11 @@ void UTacticalMovementControllerComponent::UpdateTacticalMovePreviewFromHover()
 
     // Combat targeting gets first claim over hover preview so enemy hover does not fall through to regular move preview.
     if (TryBuildCombatTargetingPreview())
+    {
+        return;
+    }
+
+    if (TryBuildInteractableHoverPreview())
     {
         return;
     }

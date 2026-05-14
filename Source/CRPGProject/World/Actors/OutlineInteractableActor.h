@@ -40,6 +40,21 @@ public:
     UFUNCTION(BlueprintPure, Category = "Tactical|Outline")
     bool GetShowOutlineWhenIdle() const { return bShowOutlineWhenIdle; }
 
+    UFUNCTION(BlueprintCallable, Category = "Tactical|Interactable")
+    void SetInteractableHoverEnabled(bool bEnabled);
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Interactable")
+    bool IsInteractableHoverEnabled() const { return bInteractableHoverEnabled; }
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Interactable", meta = (Units = "cm"))
+    float GetInteractableDistanceCm() const { return InteractableDistanceCm; }
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Interactable")
+    FVector GetInteractableTargetLocation() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Interactable", meta = (Units = "cm"))
+    float GetInteractableBoundsRadiusCm() const;
+
     virtual void SetInteractableOutlineEnabled_Implementation(bool bEnabled) override;
     virtual bool IsInteractableOutlineExcluded_Implementation() const override;
 
@@ -56,8 +71,14 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Outline", meta = (AllowPrivateAccess = "true"))
     bool bInteractableOutlineExcluded = false;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Interactable", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
+    float InteractableDistanceCm = 140.0f;
+
     UPROPERTY(Transient)
     bool bInteractableOutlineEnabled = false;
+
+    UPROPERTY(Transient)
+    bool bInteractableHoverEnabled = false;
 
 private:
     void RefreshOutlinePresentation();

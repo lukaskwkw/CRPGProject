@@ -8,6 +8,9 @@
 #include "Tactical/Components/TacticalUnitComponent.h"
 #include "Tactical/Interfaces/TacticalOutlineInteractable.h"
 #include "Tactical/Subsystems/TacticalTurnSubsystem.h"
+#include "World/Actors/OutlineInteractableActor.h"
+#include "Components/CapsuleComponent.h"
+#include "Engine/EngineTypes.h"
 
 namespace TacticalOutlineOverlayEvents
 {
@@ -53,6 +56,52 @@ void UTacticalOutlineOverlayComponent::HandleGameEvent(const FString &EventName,
     }
 
     (void)Payload;
+}
+
+void UTacticalOutlineOverlayComponent::UpdateHoveredInteractableFromCursor()
+{
+    const ACRPGProjectPlayerController *Controller = GetOwnerController();
+    if (!Controller || !Controller->IsLocalPlayerController() || Controller->IsPointerOverTacticalHUD())
+    {
+        ClearHoveredInteractable();
+        return;
+    }
+
+    SetHoveredInteractableActor(ResolveInteractableUnderCursor());
+}
+
+void UTacticalOutlineOverlayComponent::ClearHoveredInteractable()
+{
+    SetHoveredInteractableActor(nullptr);
+}
+
+bool UTacticalOutlineOverlayComponent::TryGetHoveredInteractablePreviewDestination(FVector &OutDestination) const
+{
+    const ACRPGProjectPlayerController *Controller = GetOwnerController();
+    const AOutlineInteractableActor *HoveredActor = HoveredInteractableActor.Get();
+    const ACRPGBaseCharacter *SelectedCharacter = Controller ? Cast<ACRPGBaseCharacter>(Controller->GetPawn()) : nullptr;
+    const UCapsuleComponent *SelectedCapsule = SelectedCharacter ? SelectedCharacter->GetCapsuleComponent() : nullptr;
+    if (!Controller || !HoveredActor || !SelectedCharacter)
+    {
+        return false;
+    }
+
+    FVector ApproachDirection = SelectedCharacter->GetActorLocation() - HoveredActor->GetInteractableTargetLocation();
+    ApproachDirection.Z = 0.0f;
+    if (!ApproachDirection.Normalize())
+    {
+        return false;
+    }
+
+    const float InteractorRadiusCm = SelectedCapsule ? SelectedCapsule->GetUnscaledCapsuleRadius() : 55.0f;
+    const float DesiredCenterDistanceCm = FMath::Max(0.0f, InteractorRadiusCm + HoveredActor->GetInteractableBoundsRadiusCm() + HoveredActor->GetInteractableDistanceCm());
+    OutDestination = HoveredActor->GetInteractableTargetLocation() + (ApproachDirection * DesiredCenterDistanceCm);
+    return true;
+}
+
+AOutlineInteractableActor *UTacticalOutlineOverlayComponent::GetHoveredInteractableActor() const
+{
+    return HoveredInteractableActor.Get();
 }
 
 void UTacticalOutlineOverlayComponent::HandleUnitOutlineOverlayPressed()
@@ -164,4 +213,48 @@ UTacticalTurnSubsystem *UTacticalOutlineOverlayComponent::GetTacticalTurnSubsyst
     ACRPGProjectPlayerController *Controller = GetOwnerController();
     UGameInstance *GameInstance = Controller ? Controller->GetGameInstance() : nullptr;
     return GameInstance ? GameInstance->GetSubsystem<UTacticalTurnSubsystem>() : nullptr;
+}
+
+AOutlineInteractableActor *UTacticalOutlineOverlayComponent::ResolveInteractableUnderCursor() const
+{
+    const ACRPGProjectPlayerController *Controller = GetOwnerController();
+    if (!Controller)
+    {
+        return nullptr;
+    }
+
+    FHitResult HitResult;
+    if (!Controller->GetHitResultUnderCursorByChannel(UEngineTypes::ConvertToTraceType(ECC_Visibility), true, HitResult) || !HitResult.bBlockingHit)
+    {
+        return nullptr;
+    }
+
+    AActor *HitActor = HitResult.GetActor();
+    if (!HitActor && HitResult.Component.IsValid())
+    {
+        HitActor = HitResult.Component->GetOwner();
+    }
+
+    return Cast<AOutlineInteractableActor>(HitActor);
+}
+
+void UTacticalOutlineOverlayComponent::SetHoveredInteractableActor(AOutlineInteractableActor *NewInteractableActor)
+{
+    AOutlineInteractableActor *PreviousActor = HoveredInteractableActor.Get();
+    if (PreviousActor == NewInteractableActor)
+    {
+        return;
+    }
+
+    if (IsValid(PreviousActor))
+    {
+        PreviousActor->SetInteractableHoverEnabled(false);
+    }
+
+    HoveredInteractableActor = NewInteractableActor;
+
+    if (IsValid(NewInteractableActor) && !NewInteractableActor->IsInteractableOutlineExcluded_Implementation())
+    {
+        NewInteractableActor->SetInteractableHoverEnabled(true);
+    }
 }

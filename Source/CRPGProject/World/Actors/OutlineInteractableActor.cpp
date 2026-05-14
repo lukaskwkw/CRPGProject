@@ -60,6 +60,33 @@ void AOutlineInteractableActor::SetInteractableOutlineEnabled_Implementation(boo
     RefreshOutlinePresentation();
 }
 
+void AOutlineInteractableActor::SetInteractableHoverEnabled(bool bEnabled)
+{
+    if (bInteractableHoverEnabled == bEnabled)
+    {
+        return;
+    }
+
+    bInteractableHoverEnabled = bEnabled;
+    RefreshOutlinePresentation();
+}
+
+FVector AOutlineInteractableActor::GetInteractableTargetLocation() const
+{
+    FVector Origin = GetActorLocation();
+    FVector Extents = FVector::ZeroVector;
+    GetActorBounds(false, Origin, Extents);
+    return Origin;
+}
+
+float AOutlineInteractableActor::GetInteractableBoundsRadiusCm() const
+{
+    FVector Origin = FVector::ZeroVector;
+    FVector Extents = FVector::ZeroVector;
+    GetActorBounds(false, Origin, Extents);
+    return FMath::Max(0.0f, FMath::Max(Extents.X, Extents.Y));
+}
+
 bool AOutlineInteractableActor::IsInteractableOutlineExcluded_Implementation() const
 {
     return bInteractableOutlineExcluded;
@@ -70,7 +97,7 @@ void AOutlineInteractableActor::RefreshOutlinePresentation()
     const ECRPGOutlineCategory IdleCategory = bShowOutlineWhenIdle ? InteractableOutlineCategory : ECRPGOutlineCategory::None;
     const ECRPGOutlineCategory EffectiveCategory = bInteractableOutlineExcluded
                                                        ? ECRPGOutlineCategory::None
-                                                       : (bInteractableOutlineEnabled ? InteractableOutlineCategory : IdleCategory);
+                                                       : ((bInteractableOutlineEnabled || bInteractableHoverEnabled) ? InteractableOutlineCategory : IdleCategory);
     const bool bEnableOutline = EffectiveCategory != ECRPGOutlineCategory::None;
 
     TInlineComponentArray<UPrimitiveComponent *> PrimitiveComponents;

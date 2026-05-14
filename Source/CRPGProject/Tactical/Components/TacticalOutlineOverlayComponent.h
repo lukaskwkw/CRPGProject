@@ -5,6 +5,7 @@
 #include "TacticalOutlineOverlayComponent.generated.h"
 
 class ACRPGProjectPlayerController;
+class AOutlineInteractableActor;
 class UTacticalTurnSubsystem;
 
 UCLASS(ClassGroup = (Tactical), meta = (BlueprintSpawnableComponent))
@@ -23,11 +24,17 @@ public:
     void HandleInteractableOutlineOverlayPressed();
     void HandleInteractableOutlineOverlayReleased();
     void RefreshWorldOutlineOverlay() const;
+    void UpdateHoveredInteractableFromCursor();
+    void ClearHoveredInteractable();
+    bool TryGetHoveredInteractablePreviewDestination(FVector &OutDestination) const;
+    AOutlineInteractableActor *GetHoveredInteractableActor() const;
 
 private:
     ACRPGProjectPlayerController *GetOwnerController() const;
     UTacticalTurnSubsystem *GetTacticalTurnSubsystem() const;
     void RefreshInteractableOutlineOverlay(bool bEnableInteractableOverlay) const;
+    AOutlineInteractableActor *ResolveInteractableUnderCursor() const;
+    void SetHoveredInteractableActor(AOutlineInteractableActor *NewInteractableActor);
 
 private:
     UPROPERTY(Transient)
@@ -38,4 +45,7 @@ private:
 
     UPROPERTY(Transient)
     bool bInteractableOutlineOverlayHeld = false;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<AOutlineInteractableActor> HoveredInteractableActor;
 };

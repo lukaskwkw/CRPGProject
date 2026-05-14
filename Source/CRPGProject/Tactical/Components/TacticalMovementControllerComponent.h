@@ -6,6 +6,7 @@
 #include "TacticalMovementControllerComponent.generated.h"
 
 class ACRPGProjectPlayerController;
+struct FHitResult;
 class APawn;
 class ACharacter;
 class ACRPGBaseCharacter;
@@ -48,12 +49,15 @@ private:
     bool IsTacticalModeActive() const;
     bool TryGetTacticalCursorWorldLocation(FVector &OutWorldLocation) const;
     bool IsClickNearPendingDestination(const FVector &ClickedLocation) const;
+    bool IsClickOnHoveredInteractable(const FHitResult &HitResult) const;
     float GetReservedMovementDistanceCm() const;
     float CalculatePathDistance(const TArray<FVector> &PathPoints) const;
     void BuildTacticalMovePreview(const FVector &Destination);
     // Reuses the regular movement-preview pipeline, but feeds it a controller-computed destination that would
     // move the active unit into melee or ranged attack range of the hovered enemy.
     bool TryBuildCombatTargetingPreview();
+    // Reuses the regular preview pipeline to stop at the hovered interactable's configured use distance.
+    bool TryBuildInteractableHoverPreview();
     void BuildClampedTacticalPath(const TArray<FVector> &SourcePathPoints, float MaxDistanceCm, TArray<FVector> &OutPathPoints, float &OutDistanceCm) const;
     void UpdateTacticalMovePreviewFromHover();
     void StartTacticalPathTraversal(const TArray<FVector> &PathPoints, float PendingDistanceConsumption = 0.0f);
