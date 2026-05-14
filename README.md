@@ -15,6 +15,7 @@ For the long-form project state and architecture summary, see [Docs/Overview.md]
 - initiative-driven tactical encounter management
 - manual tactical movement preview and click-to-move traversal
 - prototype tactical combat targeting, attack resolution, and combat feedback
+- multi-category world outlines for units and interactables
 - event-driven subsystem architecture
 
 ## Project Structure
@@ -54,6 +55,10 @@ If the build fails at link time with `UnrealEditor-CRPGProject.dll` locked, clos
 - tactical camera mode and turn mode are separate systems
 - encounter flow is owned by `UTacticalTurnSubsystem`
 - combat targeting is owned by `ACRPGProjectPlayerController`, while hit/damage resolution is owned by `UCombatResolverSubsystem`
+- unit and interactable world outlines are orchestrated by `UTacticalOutlineOverlayComponent`
+- `ACRPGBaseCharacter` separates authored outline metadata from runtime overlay state, so authored categories are not shown by default at startup
+- `AOutlineInteractableActor` is the reusable native base for hoverable/outlineable world interactables
+- interactable hover outline works globally, while approach preview to interactable use range is currently part of tactical turn-mode movement preview
 - the tactical encounter HUD is data-driven from `UTacticalTurnSubsystem` and `UTacticalUnitComponent`
 - initiative entries are rebuilt from subsystem order; party entries are rebuilt from registered player-controlled units
 - current UMG entry widgets use a hybrid split: C++ supplies data and spawns entry widgets, Blueprint handles visual presentation in `OnViewDataChanged`

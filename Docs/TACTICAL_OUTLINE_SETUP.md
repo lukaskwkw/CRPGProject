@@ -1,11 +1,14 @@
 # Tactical Outline Setup
 
-This guide walks through the editor-side setup for the hover outline used by tactical combat targeting.
+This guide walks through the editor-side setup for the outline system used by tactical combat targeting, held world overlays, and hoverable interactables.
 
 Code support is already in place:
 
 - hovered enemy targets enable `Render CustomDepth`
 - hovered targets write a custom stencil value from `ACRPGBaseCharacter`
+- unit category overlays are orchestrated by `UTacticalOutlineOverlayComponent`
+- interactable outlines are supported through `ITacticalOutlineInteractable` and the reusable `AOutlineInteractableActor` base class
+- authored outline categories and runtime overlay categories are intentionally separate in `ACRPGBaseCharacter`
 - `r.CustomDepth=3` is already enabled in project config
 
 What is still missing is the Unreal asset setup that turns that stencil/custom-depth data into a visible outline.
@@ -15,7 +18,24 @@ What is still missing is the Unreal asset setup that turns that stencil/custom-d
 After this setup:
 
 - hovering an enemy in combat targeting mode should visibly outline that unit in the world
+- holding `~` should show authored unit categories when those units do not use `None`
+- hovering a supported interactable should visibly outline it in the world
+- holding `Alt` should show interactable overlays globally
 - the effect should come from a post-process material driven by `CustomStencil`
+
+## Runtime category model
+
+The current code path intentionally distinguishes between authored and transient outline state.
+
+- `OutlineCategory` on `ACRPGBaseCharacter` is metadata or designer intent.
+- `RuntimeOutlineCategory` is what the held overlay system writes at runtime.
+- `bShowOutlineCategoryWhenIdle` defaults to `false`, so authored categories do not automatically render at startup.
+- `None` means no highlight for held unit overlays as well, not "infer from team".
+
+For world interactables, `AOutlineInteractableActor` follows the same principle:
+
+- authored interactable category is content metadata
+- hover and held `Alt` overlay are runtime presentation states
 
 ## Recommended Setup
 
@@ -26,6 +46,19 @@ Why:
 - `CustomDepth` tells you that an object was marked
 - `CustomStencil` lets you distinguish target types later
 - it gives you room for future values such as ally, enemy, active unit, interactable, or danger marker
+
+Current stencil categories in code are:
+
+- `0 None`
+- `1 HoveredEnemy`
+- `2 PartyMember`
+- `3 ActivePartyMember`
+- `4 FriendlyNonParty`
+- `5 Neutral`
+- `6 Enemy`
+- `7 Interactable`
+
+If you branch colors by stencil value in the material, keep these values aligned with the enum in `ACRPGBaseCharacter`.
 
 ## Part 1. Create the material
 
@@ -258,6 +291,25 @@ If the material compiler complains that `SceneTextureLookup` is unknown:
 5. compile again
 
 This is a common Unreal material translator quirk when using scene texture functions inside a `Custom` node.
+
+## Interactable authoring workflow
+
+If you want a world object to participate in the current outline system without custom C++ each time, prefer deriving a Blueprint from `AOutlineInteractableActor`.
+
+Recommended setup:
+
+1. Create a Blueprint child of `AOutlineInteractableActor`.
+2. Add one or more visible primitive components such as static meshes.
+3. Leave `InteractableOutlineCategory` as `Interactable` unless you have a clear reason to remap it.
+4. Set `InteractableDistanceCm` to the range from which the object should be usable.
+5. Use `bShowOutlineWhenIdle` only if the asset should be permanently visible outside hover or held overlay states.
+
+Current behavior:
+
+- hover outline is global
+- held `Alt` overlay is global
+- tactical approach preview to use range is available in turn mode
+- actual interaction execution after arrival is not implemented yet in this slice
 
 ## Minimal stencil-aware follow-up
 
