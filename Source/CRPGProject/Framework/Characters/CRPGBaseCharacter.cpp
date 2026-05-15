@@ -1,5 +1,6 @@
 #include "CRPGBaseCharacter.h"
 #include "AbilitySystemComponent.h"
+#include "Animation/AnimMontage.h"
 #include "Combat/Types/CombatTypes.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/TextRenderComponent.h"
@@ -71,6 +72,8 @@ void ACRPGBaseCharacter::BeginPlay()
 {
     Super::BeginPlay();
 
+    StandingCapsuleHalfHeightCm = GetCapsuleComponent() ? GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() : 0.0f;
+
     if (CombatFeedbackText)
     {
         const float CapsuleHalfHeight = GetCapsuleComponent() ? GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() : 88.0f;
@@ -105,6 +108,26 @@ void ACRPGBaseCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
     Super::EndPlay(EndPlayReason);
 }
 
+float ACRPGBaseCharacter::PlayMeleeAttackMontage()
+{
+    return PlayConfiguredMontage(MeleeAttackMontage);
+}
+
+float ACRPGBaseCharacter::PlayRangedAttackMontage()
+{
+    return PlayConfiguredMontage(RangedAttackMontage);
+}
+
+float ACRPGBaseCharacter::PlayDodgeMontage()
+{
+    return PlayConfiguredMontage(DodgeMontage);
+}
+
+float ACRPGBaseCharacter::PlayHitReactMontage()
+{
+    return PlayConfiguredMontage(HitReactMontage);
+}
+
 void ACRPGBaseCharacter::EnterTacticalDeathState()
 {
     SetCombatTargetHighlightEnabled(false);
@@ -120,9 +143,84 @@ void ACRPGBaseCharacter::EnterTacticalDeathState()
 
     if (UCapsuleComponent *CharacterCapsule = GetCapsuleComponent())
     {
+        if (StandingCapsuleHalfHeightCm > 0.0f)
+        {
+            CharacterCapsule->SetCapsuleHalfHeight(StandingCapsuleHalfHeightCm, true);
+        }
+
         CharacterCapsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     }
 
+    if (USkeletalMeshComponent *CharacterMesh = GetMesh())
+    {
+        CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        CharacterMesh->SetAllBodiesSimulatePhysics(false);
+        CharacterMesh->SetSimulatePhysics(false);
+    }
+
+    if (PlayDeathMontage() <= 0.0f)
+    {
+        EnableCombatRagdoll();
+    }
+}
+
+float ACRPGBaseCharacter::PlayDeathMontage()
+{
+    return PlayConfiguredMontage(DeathMontage);
+}
+
+void ACRPGBaseCharacter::EnterTacticalProneState()
+{
+    SetCombatTargetHighlightEnabled(false);
+    HideCombatFeedbackText();
+
+    if (UCharacterMovementComponent *CharacterMovementComponent = GetCharacterMovement())
+    {
+        CharacterMovementComponent->DisableMovement();
+        CharacterMovementComponent->StopMovementImmediately();
+    }
+
+    if (UCapsuleComponent *CharacterCapsule = GetCapsuleComponent())
+    {
+        if (StandingCapsuleHalfHeightCm <= 0.0f)
+        {
+            StandingCapsuleHalfHeightCm = CharacterCapsule->GetUnscaledCapsuleHalfHeight();
+        }
+
+        CharacterCapsule->SetCapsuleHalfHeight(FMath::Max(0.0f, ProneCapsuleHalfHeightCm), true);
+    }
+
+    PlayProneMontage();
+}
+
+float ACRPGBaseCharacter::PlayProneMontage()
+{
+    return PlayConfiguredMontage(ProneMontage);
+}
+
+void ACRPGBaseCharacter::RecoverFromPronePresentation()
+{
+    if (UCapsuleComponent *CharacterCapsule = GetCapsuleComponent(); CharacterCapsule && StandingCapsuleHalfHeightCm > 0.0f)
+    {
+        CharacterCapsule->SetCapsuleHalfHeight(StandingCapsuleHalfHeightCm, true);
+    }
+
+    if (UCharacterMovementComponent *CharacterMovementComponent = GetCharacterMovement())
+    {
+        CharacterMovementComponent->SetMovementMode(MOVE_Walking);
+        CharacterMovementComponent->StopMovementImmediately();
+    }
+
+    PlayStandUpMontage();
+}
+
+float ACRPGBaseCharacter::PlayStandUpMontage()
+{
+    return PlayConfiguredMontage(StandUpMontage);
+}
+
+void ACRPGBaseCharacter::EnableCombatRagdoll()
+{
     if (USkeletalMeshComponent *CharacterMesh = GetMesh())
     {
         CharacterMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
@@ -314,6 +412,11 @@ void ACRPGBaseCharacter::UpdateCombatFeedbackPresentation(float DeltaSeconds)
     FColor AnimatedColor = CombatFeedbackActiveColor;
     AnimatedColor.A = static_cast<uint8>(FMath::RoundToInt(255.0f * FMath::Clamp(FadeAlpha, 0.0f, 1.0f)));
     CombatFeedbackText->SetTextRenderColor(AnimatedColor);
+}
+
+float ACRPGBaseCharacter::PlayConfiguredMontage(UAnimMontage *Montage)
+{
+    return Montage ? PlayAnimMontage(Montage) : 0.0f;
 }
 
 void ACRPGBaseCharacter::UpdateTacticalOccupancyNavigationBlocker(const ACRPGBaseCharacter *ReferenceCharacter)

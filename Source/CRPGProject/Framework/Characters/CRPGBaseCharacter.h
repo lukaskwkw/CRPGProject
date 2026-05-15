@@ -8,6 +8,7 @@
 struct FCombatAttackResult;
 
 class UAbilitySystemComponent;
+class UAnimMontage;
 class UCRPGAttributeSet;
 class UCapsuleComponent;
 class UTextRenderComponent;
@@ -38,7 +39,27 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayMeleeAttackMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayRangedAttackMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayDodgeMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayHitReactMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
 	void EnterTacticalDeathState();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayDeathMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	void EnterTacticalProneState();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayProneMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	void RecoverFromPronePresentation();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayStandUpMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	void EnableCombatRagdoll();
 	// Controller hover targeting toggles this so combat UI can point at a world-space enemy without needing BP glue.
 	void SetCombatTargetHighlightEnabled(bool bEnabled);
 	// Stores the authored/default outline category configured on the asset or changed explicitly by gameplay code.
@@ -115,6 +136,30 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float CombatFeedbackFadeStartFraction = 0.45f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimMontage> MeleeAttackMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimMontage> RangedAttackMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimMontage> DodgeMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimMontage> HitReactMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimMontage> DeathMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimMontage> ProneMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimMontage> StandUpMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
+	float ProneCapsuleHalfHeightCm = 44.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Outline", meta = (AllowPrivateAccess = "true"))
 	ECRPGOutlineCategory OutlineCategory = ECRPGOutlineCategory::None;
 
@@ -131,9 +176,11 @@ protected:
 	FVector CombatFeedbackBaseRelativeLocation = FVector::ZeroVector;
 	FColor CombatFeedbackActiveColor = FColor::White;
 	float CombatFeedbackElapsedSeconds = 0.0f;
+	float StandingCapsuleHalfHeightCm = 0.0f;
 	bool bCombatTargetHighlightEnabled = false;
 	bool bCombatFeedbackAnimating = false;
 
+	float PlayConfiguredMontage(UAnimMontage *Montage);
 	void RefreshOutlinePresentation();
 	void ShowCombatFeedbackText(const FString &Text, const FColor &Color);
 	void HideCombatFeedbackText();

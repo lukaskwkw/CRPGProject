@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Combat/Types/CombatTypes.h"
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "TacticalUnitComponent.generated.h"
@@ -50,8 +51,20 @@ public:
     void ResetForNewRound();
 
     UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns whether the unit is currently in the prone/downed state. */
+    bool IsProne() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
     /** Returns whether the unit has been reduced to zero HP. */
     bool IsDead() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns the explicit combat state used by tactical gating and animation flow. */
+    ECombatUnitState GetCombatState() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+    /** Sets the current combat state and applies the corresponding tactical side effects. */
+    void SetCombatState(ECombatUnitState NewState);
 
     UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
     /** Applies prototype combat damage and triggers death when HP reaches zero. */
@@ -108,6 +121,22 @@ public:
     UFUNCTION(BlueprintPure, Category = "Tactical|Encounter")
     /** Returns whether this unit can still participate in the current encounter. */
     bool IsAlive() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns whether the unit can currently move. */
+    bool CanMove() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns whether the unit can currently act. */
+    bool CanAct() const;
+
+    UFUNCTION(BlueprintPure, Category = "Tactical|Combat")
+    /** Returns whether the unit is currently eligible to enter the party-only prone/downed state. */
+    bool CanEnterProneState() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+    /** Restores a prone party member to a standing alive state. */
+    void RecoverFromProne();
 
     UFUNCTION(BlueprintPure, Category = "Tactical|Identity")
     /** Returns whether the unit belongs to the player's party. */
@@ -212,6 +241,9 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Encounter", meta = (AllowPrivateAccess = "true"))
     bool bIsAlive = true;
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true"))
+    ECombatUnitState CombatState = ECombatUnitState::Alive;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tactical|Combat", meta = (ClampMin = "1", AllowPrivateAccess = "true"))
     // Prototype combat currently lives here rather than in GAS so the first tactical vertical slice stays self-contained.
     int32 MaxHP = 60;
@@ -293,4 +325,8 @@ protected:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical", meta = (AllowPrivateAccess = "true"))
     bool bTurnConsumed = false;
+
+private:
+    void PublishCombatStateChangedEvent(ECombatUnitState PreviousState, ECombatUnitState NewState) const;
+    void RefreshOwnerStatePresentation(ECombatUnitState PreviousState, ECombatUnitState NewState);
 };

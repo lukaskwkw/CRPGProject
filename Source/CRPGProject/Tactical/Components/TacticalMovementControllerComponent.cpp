@@ -81,6 +81,15 @@ void UTacticalMovementControllerComponent::HandleTacticalLeftClick()
         return;
     }
 
+    if (const ACRPGBaseCharacter *ControlledCharacter = Cast<ACRPGBaseCharacter>(ControlledPawn))
+    {
+        const UTacticalUnitComponent *ControlledUnit = ControlledCharacter->GetTacticalUnitComponent();
+        if (ControlledUnit && !ControlledUnit->CanMove())
+        {
+            return;
+        }
+    }
+
     const FVector ClickedLocation = HitResult.ImpactPoint;
 
     // In turn mode a click only confirms the currently hovered preview; outside turn mode it starts immediate traversal.
@@ -635,6 +644,20 @@ void UTacticalMovementControllerComponent::UpdateTacticalMovePreviewFromHover()
         return;
     }
 
+    if (const ACRPGBaseCharacter *ControlledCharacter = Controller ? Cast<ACRPGBaseCharacter>(Controller->GetPawn()) : nullptr)
+    {
+        const UTacticalUnitComponent *ControlledUnit = ControlledCharacter->GetTacticalUnitComponent();
+        if (ControlledUnit && !ControlledUnit->CanMove())
+        {
+            if (PendingMovePreview.bHasPreview)
+            {
+                ClearPendingTacticalMovePreview();
+            }
+
+            return;
+        }
+    }
+
     // Combat targeting gets first claim over hover preview so enemy hover does not fall through to regular move preview.
     if (TryBuildCombatTargetingPreview())
     {
@@ -722,6 +745,16 @@ void UTacticalMovementControllerComponent::UpdateTacticalPathTraversal(float Del
 
     ACRPGProjectPlayerController *Controller = GetOwnerController();
     ACharacter *ControlledCharacter = Controller ? Cast<ACharacter>(Controller->GetPawn()) : nullptr;
+    if (const ACRPGBaseCharacter *ControlledBaseCharacter = Cast<ACRPGBaseCharacter>(ControlledCharacter))
+    {
+        const UTacticalUnitComponent *ControlledUnit = ControlledBaseCharacter->GetTacticalUnitComponent();
+        if (ControlledUnit && !ControlledUnit->CanMove())
+        {
+            ClearTacticalPathTraversal(false);
+            return;
+        }
+    }
+
     if (!ControlledCharacter || !ActiveTacticalPathPoints.IsValidIndex(CurrentPathIndex))
     {
         ClearTacticalPathTraversal(false);
