@@ -28,10 +28,22 @@ enum class ECombatUnitState : uint8
     Dead UMETA(DisplayName = "Dead")
 };
 
+UENUM(BlueprintType)
+enum class ECombatReactionDirection : uint8
+{
+    Front UMETA(DisplayName = "Front"),
+    Back UMETA(DisplayName = "Back"),
+    Left UMETA(DisplayName = "Left"),
+    Right UMETA(DisplayName = "Right")
+};
+
 USTRUCT(BlueprintType)
 struct CRPGPROJECT_API FCombatAttackResult
 {
     GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Combat")
+    bool bWasResolved = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Combat")
     bool bHit = false;
@@ -72,6 +84,9 @@ struct CRPGPROJECT_API FPendingCombatAttack
 
     UPROPERTY(BlueprintReadOnly, Category = "Combat")
     bool bHasResolvedResult = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Combat")
+    bool bMissReactionTriggered = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Combat")
     bool bTriggeredAfterTraversal = false;

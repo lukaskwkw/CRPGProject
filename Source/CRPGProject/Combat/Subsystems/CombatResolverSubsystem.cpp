@@ -110,6 +110,8 @@ FCombatAttackResult UCombatResolverSubsystem::ResolveAttack(UTacticalUnitCompone
         return Result;
     }
 
+    Result.bWasResolved = true;
+
     const int32 RawD20Roll = FMath::RandRange(1, 20);
     const bool bIsMeleeAttack = ActionType == ECombatActionType::MeleeAttack;
     const int32 AttackBonus = bIsMeleeAttack ? Attacker->GetMeleeAttackBonus() : Attacker->GetRangedAttackBonus();

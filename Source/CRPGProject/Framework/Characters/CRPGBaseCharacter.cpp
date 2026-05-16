@@ -110,12 +110,12 @@ void ACRPGBaseCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 float ACRPGBaseCharacter::PlayMeleeAttackMontage()
 {
-    return PlayConfiguredMontage(MeleeAttackMontage);
+    return PlayConfiguredMontageRandomSection(MeleeAttackMontage);
 }
 
 float ACRPGBaseCharacter::PlayRangedAttackMontage()
 {
-    return PlayConfiguredMontage(RangedAttackMontage);
+    return PlayConfiguredMontageRandomSection(RangedAttackMontage);
 }
 
 float ACRPGBaseCharacter::PlayDodgeMontage()
@@ -123,9 +123,19 @@ float ACRPGBaseCharacter::PlayDodgeMontage()
     return PlayConfiguredMontage(DodgeMontage);
 }
 
+float ACRPGBaseCharacter::PlayDodgeMontageForDirection(ECombatReactionDirection Direction)
+{
+    return PlayConfiguredMontageSection(DodgeMontage, Direction);
+}
+
 float ACRPGBaseCharacter::PlayHitReactMontage()
 {
     return PlayConfiguredMontage(HitReactMontage);
+}
+
+float ACRPGBaseCharacter::PlayHitReactMontageForDirection(ECombatReactionDirection Direction)
+{
+    return PlayConfiguredMontageSection(HitReactMontage, Direction);
 }
 
 void ACRPGBaseCharacter::EnterTacticalDeathState()
@@ -158,7 +168,10 @@ void ACRPGBaseCharacter::EnterTacticalDeathState()
         CharacterMesh->SetSimulatePhysics(false);
     }
 
-    if (PlayDeathMontage() <= 0.0f)
+    ECombatReactionDirection DeathDirection = ECombatReactionDirection::Front;
+    const bool bHasDirectionalDeath = ConsumePendingCombatReactionDirection(DeathDirection);
+    const float MontageDuration = bHasDirectionalDeath ? PlayDeathMontageForDirection(DeathDirection) : PlayDeathMontage();
+    if (MontageDuration <= 0.0f)
     {
         EnableCombatRagdoll();
     }
@@ -167,6 +180,29 @@ void ACRPGBaseCharacter::EnterTacticalDeathState()
 float ACRPGBaseCharacter::PlayDeathMontage()
 {
     return PlayConfiguredMontage(DeathMontage);
+}
+
+float ACRPGBaseCharacter::PlayDeathMontageForDirection(ECombatReactionDirection Direction)
+{
+    return PlayConfiguredMontageSection(DeathMontage, Direction);
+}
+
+void ACRPGBaseCharacter::SetPendingCombatReactionDirection(ECombatReactionDirection Direction)
+{
+    PendingCombatReactionDirection = Direction;
+    bHasPendingCombatReactionDirection = true;
+}
+
+bool ACRPGBaseCharacter::ConsumePendingCombatReactionDirection(ECombatReactionDirection &OutDirection)
+{
+    if (!bHasPendingCombatReactionDirection)
+    {
+        return false;
+    }
+
+    OutDirection = PendingCombatReactionDirection;
+    bHasPendingCombatReactionDirection = false;
+    return true;
 }
 
 void ACRPGBaseCharacter::EnterTacticalProneState()
@@ -417,6 +453,85 @@ void ACRPGBaseCharacter::UpdateCombatFeedbackPresentation(float DeltaSeconds)
 float ACRPGBaseCharacter::PlayConfiguredMontage(UAnimMontage *Montage)
 {
     return Montage ? PlayAnimMontage(Montage) : 0.0f;
+}
+
+float ACRPGBaseCharacter::PlayConfiguredMontageRandomSection(UAnimMontage *Montage)
+{
+    if (!Montage)
+    {
+        return 0.0f;
+    }
+
+    TArray<FName, TInlineAllocator<8>> AvailableSections;
+    for (int32 SectionIndex = 0; SectionIndex < Montage->GetNumSections(); ++SectionIndex)
+    {
+        const FName SectionName = Montage->GetSectionName(SectionIndex);
+        if (SectionName != NAME_None)
+        {
+            AvailableSections.Add(SectionName);
+        }
+    }
+
+    if (AvailableSections.Num() == 0)
+    {
+        return PlayAnimMontage(Montage);
+    }
+
+    const int32 RandomSectionIndex = FMath::RandRange(0, AvailableSections.Num() - 1);
+    UE_LOG(LogTemp, Log, TEXT("[CRPGBaseCharacter] Playing random attack montage=%s section=%s on character=%s"), *GetNameSafe(Montage), *AvailableSections[RandomSectionIndex].ToString(), *GetNameSafe(this));
+    return PlayAnimMontage(Montage, 1.0f, AvailableSections[RandomSectionIndex]);
+}
+
+float ACRPGBaseCharacter::PlayConfiguredMontageSection(UAnimMontage *Montage, ECombatReactionDirection Direction)
+{
+    if (!Montage)
+    {
+        return 0.0f;
+    }
+
+    const FName DesiredSection = GetReactionDirectionSectionName(Direction);
+    if (DesiredSection != NAME_None && Montage->GetSectionIndex(DesiredSection) != INDEX_NONE)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[CRPGBaseCharacter] Playing montage=%s section=%s on character=%s"), *GetNameSafe(Montage), *DesiredSection.ToString(), *GetNameSafe(this));
+        return PlayAnimMontage(Montage, 1.0f, DesiredSection);
+    }
+
+    TArray<FName, TInlineAllocator<4>> AvailableSections;
+    for (int32 SectionIndex = 0; SectionIndex < Montage->GetNumSections(); ++SectionIndex)
+    {
+        const FName SectionName = Montage->GetSectionName(SectionIndex);
+        if (SectionName != NAME_None)
+        {
+            AvailableSections.Add(SectionName);
+        }
+    }
+
+    if (AvailableSections.Num() > 0)
+    {
+        const int32 RandomSectionIndex = FMath::RandRange(0, AvailableSections.Num() - 1);
+        UE_LOG(LogTemp, Warning, TEXT("[CRPGBaseCharacter] Missing desired section=%s in montage=%s on character=%s, falling back to random section=%s"), *DesiredSection.ToString(), *GetNameSafe(Montage), *GetNameSafe(this), *AvailableSections[RandomSectionIndex].ToString());
+        return PlayAnimMontage(Montage, 1.0f, AvailableSections[RandomSectionIndex]);
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("[CRPGBaseCharacter] Montage=%s on character=%s has no named sections, playing full montage for desired section=%s"), *GetNameSafe(Montage), *GetNameSafe(this), *DesiredSection.ToString());
+    return PlayAnimMontage(Montage);
+}
+
+FName ACRPGBaseCharacter::GetReactionDirectionSectionName(ECombatReactionDirection Direction) const
+{
+    switch (Direction)
+    {
+    case ECombatReactionDirection::Front:
+        return TEXT("Front");
+    case ECombatReactionDirection::Back:
+        return TEXT("Back");
+    case ECombatReactionDirection::Left:
+        return TEXT("Left");
+    case ECombatReactionDirection::Right:
+        return TEXT("Right");
+    default:
+        return NAME_None;
+    }
 }
 
 void ACRPGBaseCharacter::UpdateTacticalOccupancyNavigationBlocker(const ACRPGBaseCharacter *ReferenceCharacter)

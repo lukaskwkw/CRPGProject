@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Combat/Types/CombatTypes.h"
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
@@ -45,11 +46,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
 	float PlayDodgeMontage();
 	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayDodgeMontageForDirection(ECombatReactionDirection Direction);
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
 	float PlayHitReactMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayHitReactMontageForDirection(ECombatReactionDirection Direction);
 	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
 	void EnterTacticalDeathState();
 	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
 	float PlayDeathMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayDeathMontageForDirection(ECombatReactionDirection Direction);
+	void SetPendingCombatReactionDirection(ECombatReactionDirection Direction);
+	bool ConsumePendingCombatReactionDirection(ECombatReactionDirection &OutDirection);
 	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
 	void EnterTacticalProneState();
 	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
@@ -96,6 +105,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Tactical")
 	UTacticalUnitComponent *GetTacticalUnitComponent() const;
+	float GetCombatReactionFacingYawOffsetDegrees() const { return CombatReactionFacingYawOffsetDegrees; }
 
 	//// Called every frame
 	// virtual void Tick(float DeltaTime) override;
@@ -160,6 +170,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
 	float ProneCapsuleHalfHeightCm = 44.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true", ClampMin = "-180.0", ClampMax = "180.0", Units = "deg"))
+	float CombatReactionFacingYawOffsetDegrees = 0.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Outline", meta = (AllowPrivateAccess = "true"))
 	ECRPGOutlineCategory OutlineCategory = ECRPGOutlineCategory::None;
 
@@ -177,10 +190,15 @@ protected:
 	FColor CombatFeedbackActiveColor = FColor::White;
 	float CombatFeedbackElapsedSeconds = 0.0f;
 	float StandingCapsuleHalfHeightCm = 0.0f;
+	ECombatReactionDirection PendingCombatReactionDirection = ECombatReactionDirection::Front;
 	bool bCombatTargetHighlightEnabled = false;
 	bool bCombatFeedbackAnimating = false;
+	bool bHasPendingCombatReactionDirection = false;
 
 	float PlayConfiguredMontage(UAnimMontage *Montage);
+	float PlayConfiguredMontageRandomSection(UAnimMontage *Montage);
+	float PlayConfiguredMontageSection(UAnimMontage *Montage, ECombatReactionDirection Direction);
+	FName GetReactionDirectionSectionName(ECombatReactionDirection Direction) const;
 	void RefreshOutlinePresentation();
 	void ShowCombatFeedbackText(const FString &Text, const FColor &Color);
 	void HideCombatFeedbackText();

@@ -3,6 +3,7 @@
 #include "Combat/Subsystems/CombatResolverSubsystem.h"
 #include "Events/Subsystems/EventBusSubsystem.h"
 #include "Framework/Characters/CRPGBaseCharacter.h"
+#include "Math/RotationMatrix.h"
 #include "Tactical/Components/TacticalUnitComponent.h"
 
 namespace CombatExecutionEvents
@@ -10,6 +11,7 @@ namespace CombatExecutionEvents
     static const FString AttackStarted = TEXT("combat_attack_started");
     static const FString AttackCommitted = TEXT("combat_attack_committed");
     static const FString AttackCancelled = TEXT("combat_attack_cancelled");
+    static const FString AttackMissReactionTriggered = TEXT("combat_attack_miss_reaction_triggered");
 }
 
 bool UCombatExecutionSubsystem::RequestAttackExecution(UTacticalUnitComponent *Attacker, UTacticalUnitComponent *Defender, ECombatActionType ActionType, bool bTriggeredAfterTraversal)
@@ -29,14 +31,39 @@ bool UCombatExecutionSubsystem::RequestAttackExecution(UTacticalUnitComponent *A
         return false;
     }
 
+    UGameInstance *GameInstance = GetGameInstance();
+    UCombatResolverSubsystem *CombatResolverSubsystem = GameInstance ? GameInstance->GetSubsystem<UCombatResolverSubsystem>() : nullptr;
+    if (!CombatResolverSubsystem)
+    {
+        CancelPendingAttack(Attacker);
+        return false;
+    }
+
+    const FCombatAttackResult ResolvedResult = CombatResolverSubsystem->ResolveAttackForExecution(Attacker, Defender, ActionType);
+    if (!ResolvedResult.bWasResolved)
+    {
+        CancelPendingAttack(Attacker);
+        return false;
+    }
+
+    if (!MarkPendingAttackResolved(Attacker, ResolvedResult))
+    {
+        CancelPendingAttack(Attacker);
+        return false;
+    }
+
     PublishEvent(
         CombatExecutionEvents::AttackStarted,
         FString::Printf(
-            TEXT("attacker=%s;defender=%s;action=%d;after_traversal=%s"),
+            TEXT("attacker=%s;defender=%s;action=%d;after_traversal=%s;resolved_hit=%s;attack_roll=%d;natural_roll=%d;critical=%s"),
             *GetNameSafe(Attacker->GetOwner()),
             *GetNameSafe(Defender->GetOwner()),
             static_cast<int32>(ActionType),
-            bTriggeredAfterTraversal ? TEXT("true") : TEXT("false")));
+            bTriggeredAfterTraversal ? TEXT("true") : TEXT("false"),
+            ResolvedResult.bHit ? TEXT("true") : TEXT("false"),
+            ResolvedResult.AttackRoll,
+            ResolvedResult.NaturalRoll,
+            ResolvedResult.bCriticalHit ? TEXT("true") : TEXT("false")));
 
     if (PlayAttackMontage(Attacker, ActionType) <= 0.0f)
     {
@@ -120,6 +147,17 @@ bool UCombatExecutionSubsystem::ExecutePendingAttackAtHitWindow(UTacticalUnitCom
         return false;
     }
 
+    if (!PendingAttack.bHasResolvedResult || !PendingAttack.ResolvedResult.bWasResolved)
+    {
+        return false;
+    }
+
+    const ECombatReactionDirection ReactionDirection = CalculateReactionDirection(PendingAttack.Defender, PendingAttack.Attacker);
+    if (ACRPGBaseCharacter *DefenderCharacter = Cast<ACRPGBaseCharacter>(PendingAttack.Defender->GetOwner()))
+    {
+        DefenderCharacter->SetPendingCombatReactionDirection(ReactionDirection);
+    }
+
     UGameInstance *GameInstance = GetGameInstance();
     UCombatResolverSubsystem *CombatResolverSubsystem = GameInstance ? GameInstance->GetSubsystem<UCombatResolverSubsystem>() : nullptr;
     if (!CombatResolverSubsystem)
@@ -127,7 +165,7 @@ bool UCombatExecutionSubsystem::ExecutePendingAttackAtHitWindow(UTacticalUnitCom
         return false;
     }
 
-    const FCombatAttackResult ResolvedResult = CombatResolverSubsystem->ResolveAttackForExecution(PendingAttack.Attacker, PendingAttack.Defender, PendingAttack.ActionType);
+    const FCombatAttackResult &ResolvedResult = PendingAttack.ResolvedResult;
     CombatResolverSubsystem->CommitResolvedAttack(PendingAttack.Attacker, PendingAttack.Defender, PendingAttack.ActionType, ResolvedResult);
 
     if (ACRPGBaseCharacter *DefenderCharacter = Cast<ACRPGBaseCharacter>(PendingAttack.Defender->GetOwner()))
@@ -136,12 +174,15 @@ bool UCombatExecutionSubsystem::ExecutePendingAttackAtHitWindow(UTacticalUnitCom
         {
             if (!PendingAttack.Defender->IsDead() && !PendingAttack.Defender->IsProne())
             {
-                DefenderCharacter->PlayHitReactMontage();
+                DefenderCharacter->PlayHitReactMontageForDirection(ReactionDirection);
             }
         }
         else
         {
-            DefenderCharacter->PlayDodgeMontage();
+            if (!PendingAttack.bMissReactionTriggered)
+            {
+                DefenderCharacter->PlayDodgeMontageForDirection(ReactionDirection);
+            }
         }
     }
 
@@ -158,6 +199,45 @@ bool UCombatExecutionSubsystem::ExecutePendingAttackAtHitWindow(UTacticalUnitCom
             PendingAttack.Defender->IsDead() ? TEXT("true") : TEXT("false"),
             PendingAttack.Defender->IsProne() ? TEXT("true") : TEXT("false")));
     return true;
+}
+
+bool UCombatExecutionSubsystem::TriggerPendingMissReactionWindow(UTacticalUnitComponent *Attacker)
+{
+    const int32 PendingAttackIndex = FindPendingAttackIndex(Attacker);
+    if (PendingAttackIndex == INDEX_NONE)
+    {
+        return false;
+    }
+
+    FPendingCombatAttack &PendingAttack = PendingAttacks[PendingAttackIndex];
+    if (!PendingAttack.IsValid() || !PendingAttack.bHasResolvedResult || !PendingAttack.ResolvedResult.bWasResolved || PendingAttack.ResolvedResult.bHit || PendingAttack.bMissReactionTriggered)
+    {
+        return false;
+    }
+
+    if (!IsValid(PendingAttack.Defender) || PendingAttack.Defender->IsDead())
+    {
+        return false;
+    }
+
+    const ECombatReactionDirection ReactionDirection = CalculateReactionDirection(PendingAttack.Defender, PendingAttack.Attacker);
+    if (ACRPGBaseCharacter *DefenderCharacter = Cast<ACRPGBaseCharacter>(PendingAttack.Defender->GetOwner()))
+    {
+        DefenderCharacter->PlayDodgeMontageForDirection(ReactionDirection);
+        PendingAttack.bMissReactionTriggered = true;
+
+        PublishEvent(
+            CombatExecutionEvents::AttackMissReactionTriggered,
+            FString::Printf(
+                TEXT("attacker=%s;defender=%s;action=%d;direction=%d"),
+                *GetNameSafe(PendingAttack.Attacker->GetOwner()),
+                *GetNameSafe(PendingAttack.Defender->GetOwner()),
+                static_cast<int32>(PendingAttack.ActionType),
+                static_cast<int32>(ReactionDirection)));
+        return true;
+    }
+
+    return false;
 }
 
 bool UCombatExecutionSubsystem::ConsumePendingAttack(UTacticalUnitComponent *Attacker, FPendingCombatAttack &OutPendingAttack)
@@ -217,6 +297,58 @@ float UCombatExecutionSubsystem::PlayAttackMontage(UTacticalUnitComponent *Attac
     default:
         return 0.0f;
     }
+}
+
+ECombatReactionDirection UCombatExecutionSubsystem::CalculateReactionDirection(const UTacticalUnitComponent *Receiver, const UTacticalUnitComponent *Source) const
+{
+    const AActor *ReceiverActor = Receiver ? Receiver->GetOwner() : nullptr;
+    const AActor *SourceActor = Source ? Source->GetOwner() : nullptr;
+    if (!ReceiverActor || !SourceActor)
+    {
+        return ECombatReactionDirection::Front;
+    }
+
+    FVector ToSource = SourceActor->GetActorLocation() - ReceiverActor->GetActorLocation();
+    ToSource.Z = 0.0f;
+    if (!ToSource.Normalize())
+    {
+        return ECombatReactionDirection::Front;
+    }
+
+    float FacingYawDegrees = ReceiverActor->GetActorRotation().Yaw;
+    if (const ACRPGBaseCharacter *ReceiverCharacter = Cast<ACRPGBaseCharacter>(ReceiverActor))
+    {
+        FacingYawDegrees += ReceiverCharacter->GetCombatReactionFacingYawOffsetDegrees();
+    }
+
+    const FRotator FacingRotation(0.0f, FacingYawDegrees, 0.0f);
+    const FVector ReceiverForward = FRotationMatrix(FacingRotation).GetUnitAxis(EAxis::X).GetSafeNormal2D();
+    const FVector ReceiverRight = FRotationMatrix(FacingRotation).GetUnitAxis(EAxis::Y).GetSafeNormal2D();
+
+    const float ForwardDot = FVector::DotProduct(ReceiverForward, ToSource);
+    const float RightDot = FVector::DotProduct(ReceiverRight, ToSource);
+    const float AngleDegrees = FMath::RadiansToDegrees(FMath::Atan2(RightDot, ForwardDot));
+
+    if (AngleDegrees > -45.0f && AngleDegrees <= 45.0f)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[CombatExecutionSubsystem] Reaction direction Front for receiver=%s source=%s angle=%.2f forwardDot=%.3f rightDot=%.3f facingYaw=%.2f"), *GetNameSafe(ReceiverActor), *GetNameSafe(SourceActor), AngleDegrees, ForwardDot, RightDot, FacingYawDegrees);
+        return ECombatReactionDirection::Front;
+    }
+
+    if (AngleDegrees > 45.0f && AngleDegrees <= 135.0f)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[CombatExecutionSubsystem] Reaction direction Right for receiver=%s source=%s angle=%.2f forwardDot=%.3f rightDot=%.3f facingYaw=%.2f"), *GetNameSafe(ReceiverActor), *GetNameSafe(SourceActor), AngleDegrees, ForwardDot, RightDot, FacingYawDegrees);
+        return ECombatReactionDirection::Right;
+    }
+
+    if (AngleDegrees <= -45.0f && AngleDegrees > -135.0f)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[CombatExecutionSubsystem] Reaction direction Left for receiver=%s source=%s angle=%.2f forwardDot=%.3f rightDot=%.3f facingYaw=%.2f"), *GetNameSafe(ReceiverActor), *GetNameSafe(SourceActor), AngleDegrees, ForwardDot, RightDot, FacingYawDegrees);
+        return ECombatReactionDirection::Left;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("[CombatExecutionSubsystem] Reaction direction Back for receiver=%s source=%s angle=%.2f forwardDot=%.3f rightDot=%.3f facingYaw=%.2f"), *GetNameSafe(ReceiverActor), *GetNameSafe(SourceActor), AngleDegrees, ForwardDot, RightDot, FacingYawDegrees);
+    return ECombatReactionDirection::Back;
 }
 
 void UCombatExecutionSubsystem::PublishEvent(const FString &EventName, const FString &Payload) const

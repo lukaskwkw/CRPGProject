@@ -28,6 +28,9 @@ public:
     bool MarkPendingAttackResolved(UTacticalUnitComponent *Attacker, const FCombatAttackResult &ResolvedResult);
 
     UFUNCTION(BlueprintCallable, Category = "Combat")
+    bool TriggerPendingMissReactionWindow(UTacticalUnitComponent *Attacker);
+
+    UFUNCTION(BlueprintCallable, Category = "Combat")
     bool ExecutePendingAttackAtHitWindow(UTacticalUnitComponent *Attacker);
 
     bool ConsumePendingAttack(UTacticalUnitComponent *Attacker, FPendingCombatAttack &OutPendingAttack);
@@ -39,6 +42,7 @@ private:
     int32 FindPendingAttackIndex(const UTacticalUnitComponent *Attacker) const;
     float PlayAttackMontage(UTacticalUnitComponent *Attacker, ECombatActionType ActionType) const;
     void PublishEvent(const FString &EventName, const FString &Payload) const;
+    ECombatReactionDirection CalculateReactionDirection(const UTacticalUnitComponent *Receiver, const UTacticalUnitComponent *Source) const;
 
     UPROPERTY(Transient)
     TArray<FPendingCombatAttack> PendingAttacks;
