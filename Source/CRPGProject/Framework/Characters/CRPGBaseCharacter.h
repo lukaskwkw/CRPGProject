@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Combat/Types/CombatTypes.h"
+#include "Combat/Types/EquipmentTypes.h"
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
@@ -10,8 +11,12 @@ struct FCombatAttackResult;
 
 class UAbilitySystemComponent;
 class UAnimMontage;
+class UCombatLoadoutComponent;
 class UCRPGAttributeSet;
 class UCapsuleComponent;
+class UMeshComponent;
+class USkeletalMeshComponent;
+class UStaticMeshComponent;
 class UTextRenderComponent;
 class UTacticalUnitComponent;
 
@@ -105,6 +110,42 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Tactical")
 	UTacticalUnitComponent *GetTacticalUnitComponent() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	UCombatLoadoutComponent *GetCombatLoadoutComponent() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	ECombatStyleCategory GetCombatStyleCategory() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	ECombatStanceContext GetCombatStanceContext() const;
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Loadout")
+	void SetCombatStanceContext(ECombatStanceContext NewStanceContext);
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	ECombatIdleProfile GetCurrentIdleProfile() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	ECombatLocomotionProfile GetCurrentLocomotionProfile() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool IsCombatReadyStanceActive() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool IsExplorationStanceActive() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesUnarmedStyle() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesBowStyle() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesTwoHandedStyle() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesShieldStyle() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesTwoWeaponsStyle() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesFightIdleProfile() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesNoFightIdleProfile() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesFightLocomotionProfile() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesNoFightLocomotionProfile() const;
+	void ApplyCombatLoadoutVisuals();
+	void ClearCombatLoadoutVisuals();
 	float GetCombatReactionFacingYawOffsetDegrees() const { return CombatReactionFacingYawOffsetDegrees; }
 
 	//// Called every frame
@@ -125,6 +166,45 @@ protected:
 	// Tactical runtime data such as movement budget, initiative state and logical occupancy.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical")
 	UTacticalUnitComponent *TacticalUnitComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UCombatLoadoutComponent> CombatLoadoutComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> MainHandEquipmentStaticMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USkeletalMeshComponent> MainHandEquipmentSkeletalMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> OffHandEquipmentStaticMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USkeletalMeshComponent> OffHandEquipmentSkeletalMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> TwoHandedEquipmentStaticMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USkeletalMeshComponent> TwoHandedEquipmentSkeletalMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> RangedEquipmentStaticMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USkeletalMeshComponent> RangedEquipmentSkeletalMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Sockets", meta = (AllowPrivateAccess = "true"))
+	FName DefaultMainHandEquipmentSocketName = TEXT("hand_r_socket");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Sockets", meta = (AllowPrivateAccess = "true"))
+	FName DefaultOffHandEquipmentSocketName = TEXT("hand_l_socket");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Sockets", meta = (AllowPrivateAccess = "true"))
+	FName DefaultTwoHandedEquipmentSocketName = TEXT("hand_r_socket");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Sockets", meta = (AllowPrivateAccess = "true"))
+	FName DefaultRangedEquipmentSocketName = TEXT("spine_socket");
 
 	// Invisible navigation-only footprint used to mark occupied space on the dynamic navmesh.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical", meta = (AllowPrivateAccess = "true"))
@@ -198,6 +278,12 @@ protected:
 	float PlayConfiguredMontage(UAnimMontage *Montage);
 	float PlayConfiguredMontageRandomSection(UAnimMontage *Montage);
 	float PlayConfiguredMontageSection(UAnimMontage *Montage, ECombatReactionDirection Direction);
+	void InitializeEquipmentVisualComponent(UMeshComponent *MeshComponent) const;
+	void ApplyEquippedVariantVisual(const FCombatEquippedVariant &Variant);
+	void ClearEquipmentSlotVisual(ECombatEquipmentSlot Slot);
+	FName GetDefaultEquipmentSocketName(ECombatEquipmentSlot Slot) const;
+	UStaticMeshComponent *GetEquipmentStaticMeshComponent(ECombatEquipmentSlot Slot) const;
+	USkeletalMeshComponent *GetEquipmentSkeletalMeshComponent(ECombatEquipmentSlot Slot) const;
 	FName GetReactionDirectionSectionName(ECombatReactionDirection Direction) const;
 	void RefreshOutlinePresentation();
 	void ShowCombatFeedbackText(const FString &Text, const FColor &Color);

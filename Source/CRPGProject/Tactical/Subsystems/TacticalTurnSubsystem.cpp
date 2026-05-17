@@ -101,6 +101,7 @@ void UTacticalTurnSubsystem::StartTurnMode()
     bEncounterRunning = InitiativeOrder.Num() > 0;
     ActiveInitiativeIndex = bEncounterRunning ? 0 : INDEX_NONE;
     RefreshActiveUnitFromInitiative();
+    RefreshRegisteredUnitCombatStances();
     RefreshRegisteredUnitNavigationBlockers();
 
     PublishEvent(
@@ -142,6 +143,7 @@ void UTacticalTurnSubsystem::EndTurnMode()
     bIsTurnModeActive = false;
     bEncounterRunning = false;
     CurrentRound = 0;
+    RefreshRegisteredUnitCombatStances();
     RefreshRegisteredUnitNavigationBlockers();
 
     PublishEvent(
@@ -221,6 +223,8 @@ void UTacticalTurnSubsystem::RegisterUnit(ACRPGBaseCharacter *Unit)
                               { return !RegisteredUnit.IsValid(); });
 
     RegisteredUnits.AddUnique(Unit);
+
+    Unit->SetCombatStanceContext(bIsTurnModeActive ? ECombatStanceContext::CombatReady : ECombatStanceContext::Exploration);
 
     if (!bEncounterRunning)
     {
@@ -375,6 +379,35 @@ void UTacticalTurnSubsystem::RefreshRegisteredUnitNavigationBlockers() const
         if (ACRPGBaseCharacter *Character = RegisteredUnit.Get())
         {
             Character->UpdateTacticalOccupancyNavigationBlocker(ReferenceCharacter);
+        }
+    }
+}
+
+void UTacticalTurnSubsystem::RefreshRegisteredUnitCombatStances() const
+{
+    const ECombatStanceContext DesiredStance = bIsTurnModeActive ? ECombatStanceContext::CombatReady : ECombatStanceContext::Exploration;
+
+    UE_LOG(
+        LogTemp,
+        Log,
+        TEXT("[TacticalTurnSubsystem] RefreshRegisteredUnitCombatStances desired_stance=%d registered_units=%d initiative_units=%d turn_mode=%s"),
+        static_cast<int32>(DesiredStance),
+        RegisteredUnits.Num(),
+        InitiativeOrder.Num(),
+        bIsTurnModeActive ? TEXT("true") : TEXT("false"));
+
+    for (const TWeakObjectPtr<ACRPGBaseCharacter> &RegisteredUnit : RegisteredUnits)
+    {
+        if (ACRPGBaseCharacter *Character = RegisteredUnit.Get())
+        {
+            UE_LOG(
+                LogTemp,
+                Log,
+                TEXT("[TacticalTurnSubsystem] Applying stance=%d to character=%s current_stance=%d"),
+                static_cast<int32>(DesiredStance),
+                *GetNameSafe(Character),
+                static_cast<int32>(Character->GetCombatStanceContext()));
+            Character->SetCombatStanceContext(DesiredStance);
         }
     }
 }

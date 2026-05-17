@@ -1,8 +1,12 @@
 #include "CRPGBaseCharacter.h"
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimMontage.h"
+#include "Combat/Components/CombatLoadoutComponent.h"
 #include "Combat/Types/CombatTypes.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/MeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "CRPGAttributeSet.h"
 #include "Engine/GameInstance.h"
@@ -23,8 +27,26 @@ ACRPGBaseCharacter::ACRPGBaseCharacter()
     AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
     AttributeSet = CreateDefaultSubobject<UCRPGAttributeSet>(TEXT("AttributeSet"));
     TacticalUnitComponent = CreateDefaultSubobject<UTacticalUnitComponent>(TEXT("TacticalUnitComponent"));
+    CombatLoadoutComponent = CreateDefaultSubobject<UCombatLoadoutComponent>(TEXT("CombatLoadoutComponent"));
+    MainHandEquipmentStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MainHandEquipmentStaticMesh"));
+    MainHandEquipmentSkeletalMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("MainHandEquipmentSkeletalMesh"));
+    OffHandEquipmentStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("OffHandEquipmentStaticMesh"));
+    OffHandEquipmentSkeletalMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("OffHandEquipmentSkeletalMesh"));
+    TwoHandedEquipmentStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TwoHandedEquipmentStaticMesh"));
+    TwoHandedEquipmentSkeletalMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("TwoHandedEquipmentSkeletalMesh"));
+    RangedEquipmentStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RangedEquipmentStaticMesh"));
+    RangedEquipmentSkeletalMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("RangedEquipmentSkeletalMesh"));
     TacticalOccupancyNavigationBlocker = CreateDefaultSubobject<UCapsuleComponent>(TEXT("TacticalOccupancyNavigationBlocker"));
     CombatFeedbackText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("CombatFeedbackText"));
+
+    InitializeEquipmentVisualComponent(MainHandEquipmentStaticMesh);
+    InitializeEquipmentVisualComponent(MainHandEquipmentSkeletalMesh);
+    InitializeEquipmentVisualComponent(OffHandEquipmentStaticMesh);
+    InitializeEquipmentVisualComponent(OffHandEquipmentSkeletalMesh);
+    InitializeEquipmentVisualComponent(TwoHandedEquipmentStaticMesh);
+    InitializeEquipmentVisualComponent(TwoHandedEquipmentSkeletalMesh);
+    InitializeEquipmentVisualComponent(RangedEquipmentStaticMesh);
+    InitializeEquipmentVisualComponent(RangedEquipmentSkeletalMesh);
 
     if (TacticalOccupancyNavigationBlocker)
     {
@@ -50,6 +72,18 @@ ACRPGBaseCharacter::ACRPGBaseCharacter()
         CombatFeedbackText->SetCollisionEnabled(ECollisionEnabled::NoCollision);
         CombatFeedbackText->SetGenerateOverlapEvents(false);
         CombatFeedbackText->SetCastShadow(false);
+    }
+
+    if (USkeletalMeshComponent *CharacterMesh = GetMesh())
+    {
+        MainHandEquipmentStaticMesh->SetupAttachment(CharacterMesh);
+        MainHandEquipmentSkeletalMesh->SetupAttachment(CharacterMesh);
+        OffHandEquipmentStaticMesh->SetupAttachment(CharacterMesh);
+        OffHandEquipmentSkeletalMesh->SetupAttachment(CharacterMesh);
+        TwoHandedEquipmentStaticMesh->SetupAttachment(CharacterMesh);
+        TwoHandedEquipmentSkeletalMesh->SetupAttachment(CharacterMesh);
+        RangedEquipmentStaticMesh->SetupAttachment(CharacterMesh);
+        RangedEquipmentSkeletalMesh->SetupAttachment(CharacterMesh);
     }
 }
 
@@ -83,6 +117,7 @@ void ACRPGBaseCharacter::BeginPlay()
 
     // Push the initial occupancy state before registering the unit so previews see the correct blocker size immediately.
     UpdateTacticalOccupancyNavigationBlocker();
+    ApplyCombatLoadoutVisuals();
 
     if (UGameInstance *GameInstance = GetGameInstance())
     {
@@ -110,11 +145,27 @@ void ACRPGBaseCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 float ACRPGBaseCharacter::PlayMeleeAttackMontage()
 {
+    if (CombatLoadoutComponent)
+    {
+        if (UAnimMontage *ResolvedMontage = CombatLoadoutComponent->GetResolvedAttackMontage(ECombatActionType::MeleeAttack))
+        {
+            return PlayConfiguredMontageRandomSection(ResolvedMontage);
+        }
+    }
+
     return PlayConfiguredMontageRandomSection(MeleeAttackMontage);
 }
 
 float ACRPGBaseCharacter::PlayRangedAttackMontage()
 {
+    if (CombatLoadoutComponent)
+    {
+        if (UAnimMontage *ResolvedMontage = CombatLoadoutComponent->GetResolvedAttackMontage(ECombatActionType::RangedAttack))
+        {
+            return PlayConfiguredMontageRandomSection(ResolvedMontage);
+        }
+    }
+
     return PlayConfiguredMontageRandomSection(RangedAttackMontage);
 }
 
@@ -586,4 +637,237 @@ void ACRPGBaseCharacter::UpdateTacticalOccupancyNavigationBlocker(const ACRPGBas
 UTacticalUnitComponent *ACRPGBaseCharacter::GetTacticalUnitComponent() const
 {
     return TacticalUnitComponent;
+}
+
+UCombatLoadoutComponent *ACRPGBaseCharacter::GetCombatLoadoutComponent() const
+{
+    return CombatLoadoutComponent;
+}
+
+ECombatStyleCategory ACRPGBaseCharacter::GetCombatStyleCategory() const
+{
+    return CombatLoadoutComponent ? CombatLoadoutComponent->GetCombatStyleCategory() : ECombatStyleCategory::Unarmed;
+}
+
+ECombatStanceContext ACRPGBaseCharacter::GetCombatStanceContext() const
+{
+    return CombatLoadoutComponent ? CombatLoadoutComponent->GetCombatStanceContext() : ECombatStanceContext::Exploration;
+}
+
+void ACRPGBaseCharacter::SetCombatStanceContext(ECombatStanceContext NewStanceContext)
+{
+    if (CombatLoadoutComponent)
+    {
+        CombatLoadoutComponent->SetCombatStanceContext(NewStanceContext);
+    }
+}
+
+ECombatIdleProfile ACRPGBaseCharacter::GetCurrentIdleProfile() const
+{
+    return CombatLoadoutComponent ? CombatLoadoutComponent->GetCurrentIdleProfile() : ECombatIdleProfile::Default;
+}
+
+ECombatLocomotionProfile ACRPGBaseCharacter::GetCurrentLocomotionProfile() const
+{
+    return CombatLoadoutComponent ? CombatLoadoutComponent->GetCurrentLocomotionProfile() : ECombatLocomotionProfile::Default;
+}
+
+bool ACRPGBaseCharacter::IsCombatReadyStanceActive() const
+{
+    return CombatLoadoutComponent && CombatLoadoutComponent->IsCombatReadyStanceActive();
+}
+
+bool ACRPGBaseCharacter::IsExplorationStanceActive() const
+{
+    return CombatLoadoutComponent && CombatLoadoutComponent->IsExplorationStanceActive();
+}
+
+bool ACRPGBaseCharacter::UsesUnarmedStyle() const
+{
+    return CombatLoadoutComponent && CombatLoadoutComponent->UsesUnarmedStyle();
+}
+
+bool ACRPGBaseCharacter::UsesBowStyle() const
+{
+    return CombatLoadoutComponent && CombatLoadoutComponent->UsesBowStyle();
+}
+
+bool ACRPGBaseCharacter::UsesTwoHandedStyle() const
+{
+    return CombatLoadoutComponent && CombatLoadoutComponent->UsesTwoHandedStyle();
+}
+
+bool ACRPGBaseCharacter::UsesShieldStyle() const
+{
+    return CombatLoadoutComponent && CombatLoadoutComponent->UsesShieldStyle();
+}
+
+bool ACRPGBaseCharacter::UsesTwoWeaponsStyle() const
+{
+    return CombatLoadoutComponent && CombatLoadoutComponent->UsesTwoWeaponsStyle();
+}
+
+bool ACRPGBaseCharacter::UsesFightIdleProfile() const
+{
+    return CombatLoadoutComponent && CombatLoadoutComponent->UsesFightIdleProfile();
+}
+
+bool ACRPGBaseCharacter::UsesNoFightIdleProfile() const
+{
+    return CombatLoadoutComponent && CombatLoadoutComponent->UsesNoFightIdleProfile();
+}
+
+bool ACRPGBaseCharacter::UsesFightLocomotionProfile() const
+{
+    return CombatLoadoutComponent && CombatLoadoutComponent->UsesFightLocomotionProfile();
+}
+
+bool ACRPGBaseCharacter::UsesNoFightLocomotionProfile() const
+{
+    return CombatLoadoutComponent && CombatLoadoutComponent->UsesNoFightLocomotionProfile();
+}
+
+void ACRPGBaseCharacter::ApplyCombatLoadoutVisuals()
+{
+    ClearCombatLoadoutVisuals();
+
+    if (!CombatLoadoutComponent)
+    {
+        return;
+    }
+
+    const FCombatStyleLoadout CurrentLoadout = CombatLoadoutComponent->GetCurrentLoadout();
+    for (const FCombatEquippedVariant &Variant : CurrentLoadout.EquippedVariants)
+    {
+        ApplyEquippedVariantVisual(Variant);
+    }
+}
+
+void ACRPGBaseCharacter::ClearCombatLoadoutVisuals()
+{
+    ClearEquipmentSlotVisual(ECombatEquipmentSlot::MainHand);
+    ClearEquipmentSlotVisual(ECombatEquipmentSlot::OffHand);
+    ClearEquipmentSlotVisual(ECombatEquipmentSlot::TwoHanded);
+    ClearEquipmentSlotVisual(ECombatEquipmentSlot::Ranged);
+}
+
+void ACRPGBaseCharacter::InitializeEquipmentVisualComponent(UMeshComponent *MeshComponent) const
+{
+    if (!MeshComponent)
+    {
+        return;
+    }
+
+    MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    MeshComponent->SetGenerateOverlapEvents(false);
+    MeshComponent->SetCastShadow(false);
+    MeshComponent->SetHiddenInGame(true);
+}
+
+void ACRPGBaseCharacter::ApplyEquippedVariantVisual(const FCombatEquippedVariant &Variant)
+{
+    USkeletalMeshComponent *CharacterMesh = GetMesh();
+    if (!CharacterMesh)
+    {
+        return;
+    }
+
+    UStaticMeshComponent *StaticVisualComponent = GetEquipmentStaticMeshComponent(Variant.Slot);
+    USkeletalMeshComponent *SkeletalVisualComponent = GetEquipmentSkeletalMeshComponent(Variant.Slot);
+    const FName SocketName = Variant.EquippedSocketName != NAME_None ? Variant.EquippedSocketName : GetDefaultEquipmentSocketName(Variant.Slot);
+
+    if (StaticVisualComponent)
+    {
+        StaticVisualComponent->SetStaticMesh(nullptr);
+        StaticVisualComponent->SetHiddenInGame(true);
+    }
+
+    if (SkeletalVisualComponent)
+    {
+        SkeletalVisualComponent->SetSkeletalMesh(nullptr);
+        SkeletalVisualComponent->SetHiddenInGame(true);
+    }
+
+    if (Variant.StaticMesh && StaticVisualComponent)
+    {
+        StaticVisualComponent->AttachToComponent(CharacterMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
+        StaticVisualComponent->SetRelativeTransform(Variant.RelativeTransform);
+        StaticVisualComponent->SetStaticMesh(Variant.StaticMesh);
+        StaticVisualComponent->SetHiddenInGame(false);
+        return;
+    }
+
+    if (Variant.SkeletalMesh && SkeletalVisualComponent)
+    {
+        SkeletalVisualComponent->AttachToComponent(CharacterMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
+        SkeletalVisualComponent->SetRelativeTransform(Variant.RelativeTransform);
+        SkeletalVisualComponent->SetSkeletalMesh(Variant.SkeletalMesh);
+        SkeletalVisualComponent->SetHiddenInGame(false);
+    }
+}
+
+void ACRPGBaseCharacter::ClearEquipmentSlotVisual(ECombatEquipmentSlot Slot)
+{
+    if (UStaticMeshComponent *StaticVisualComponent = GetEquipmentStaticMeshComponent(Slot))
+    {
+        StaticVisualComponent->SetStaticMesh(nullptr);
+        StaticVisualComponent->SetHiddenInGame(true);
+    }
+
+    if (USkeletalMeshComponent *SkeletalVisualComponent = GetEquipmentSkeletalMeshComponent(Slot))
+    {
+        SkeletalVisualComponent->SetSkeletalMesh(nullptr);
+        SkeletalVisualComponent->SetHiddenInGame(true);
+    }
+}
+
+FName ACRPGBaseCharacter::GetDefaultEquipmentSocketName(ECombatEquipmentSlot Slot) const
+{
+    switch (Slot)
+    {
+    case ECombatEquipmentSlot::MainHand:
+        return DefaultMainHandEquipmentSocketName;
+    case ECombatEquipmentSlot::OffHand:
+        return DefaultOffHandEquipmentSocketName;
+    case ECombatEquipmentSlot::TwoHanded:
+        return DefaultTwoHandedEquipmentSocketName;
+    case ECombatEquipmentSlot::Ranged:
+        return DefaultRangedEquipmentSocketName;
+    default:
+        return NAME_None;
+    }
+}
+
+UStaticMeshComponent *ACRPGBaseCharacter::GetEquipmentStaticMeshComponent(ECombatEquipmentSlot Slot) const
+{
+    switch (Slot)
+    {
+    case ECombatEquipmentSlot::MainHand:
+        return MainHandEquipmentStaticMesh;
+    case ECombatEquipmentSlot::OffHand:
+        return OffHandEquipmentStaticMesh;
+    case ECombatEquipmentSlot::TwoHanded:
+        return TwoHandedEquipmentStaticMesh;
+    case ECombatEquipmentSlot::Ranged:
+        return RangedEquipmentStaticMesh;
+    default:
+        return nullptr;
+    }
+}
+
+USkeletalMeshComponent *ACRPGBaseCharacter::GetEquipmentSkeletalMeshComponent(ECombatEquipmentSlot Slot) const
+{
+    switch (Slot)
+    {
+    case ECombatEquipmentSlot::MainHand:
+        return MainHandEquipmentSkeletalMesh;
+    case ECombatEquipmentSlot::OffHand:
+        return OffHandEquipmentSkeletalMesh;
+    case ECombatEquipmentSlot::TwoHanded:
+        return TwoHandedEquipmentSkeletalMesh;
+    case ECombatEquipmentSlot::Ranged:
+        return RangedEquipmentSkeletalMesh;
+    default:
+        return nullptr;
+    }
 }
