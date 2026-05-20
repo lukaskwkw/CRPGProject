@@ -173,6 +173,8 @@ void UTacticalMovementControllerComponent::CommitPendingTacticalMove()
 
     OwningController->SetCommittedTraversalControlPoints(TraversalControlPath);
     PendingMovePreview = FTacticalMovePreviewData();
+    ActiveTraversalCharacter = Cast<ACRPGBaseCharacter>(OwningController->GetPawn());
+    TraversalCompletedDelegate.Unbind();
     StartTacticalPathTraversal(TraversalControlPath, PathDistanceCm);
     RefreshTacticalCombatHUD();
 }
@@ -197,12 +199,12 @@ void UTacticalMovementControllerComponent::StopActiveTacticalMove(bool bConsumeT
         return;
     }
 
-    if (const APawn *ControlledPawn = Controller->GetPawn())
+    if (const ACharacter *ControlledCharacter = GetTraversalCharacterAsCharacter())
     {
         ActiveTraversalTravelledDistanceCm = FMath::Min(
             PendingPathDistanceConsumption,
-            ActiveTraversalTravelledDistanceCm + FVector::Distance(LastTraversalPawnLocation, ControlledPawn->GetActorLocation()));
-        LastTraversalPawnLocation = ControlledPawn->GetActorLocation();
+            ActiveTraversalTravelledDistanceCm + FVector::Distance(LastTraversalPawnLocation, ControlledCharacter->GetActorLocation()));
+        LastTraversalPawnLocation = ControlledCharacter->GetActorLocation();
     }
 
     if (bConsumeTravelledDistance && ActiveTraversalTravelledDistanceCm > KINDA_SMALL_NUMBER)
@@ -230,6 +232,8 @@ void UTacticalMovementControllerComponent::ClearTacticalPathTraversal(bool bStop
     PendingPathDistanceConsumption = 0.0f;
     ActiveTraversalTravelledDistanceCm = 0.0f;
     LastTraversalPawnLocation = FVector::ZeroVector;
+    ActiveTraversalCharacter.Reset();
+    TraversalCompletedDelegate.Unbind();
 
     if (bStopPawnMovement)
     {
@@ -271,6 +275,74 @@ const FTacticalMovePreviewData &UTacticalMovementControllerComponent::GetPending
     return PendingMovePreview;
 }
 
+bool UTacticalMovementControllerComponent::TryBuildTraversalToDestinationForUnit(ACRPGBaseCharacter *MovingUnit, const FVector &Destination, TArray<FVector> &OutTraversalControlPath, float &OutCommittedDistanceCm) const
+{
+    OutTraversalControlPath.Reset();
+    OutCommittedDistanceCm = 0.0f;
+
+    const ACRPGProjectPlayerController *Controller = GetOwnerController();
+    UTacticalUnitComponent *MovingUnitComponent = MovingUnit ? MovingUnit->GetTacticalUnitComponent() : nullptr;
+    UNavigationSystemV1 *NavigationSystem = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+    if (!Controller || !MovingUnit || !MovingUnitComponent || !MovingUnitComponent->CanMove() || !NavigationSystem)
+    {
+        return false;
+    }
+
+    FNavLocation ProjectedLocation;
+    if (!NavigationSystem->ProjectPointToNavigation(Destination, ProjectedLocation))
+    {
+        return false;
+    }
+
+    UNavigationPath *NavigationPath = NavigationSystem->FindPathToLocationSynchronously(
+        GetWorld(),
+        MovingUnit->GetActorLocation(),
+        ProjectedLocation.Location,
+        MovingUnit);
+    if (!NavigationPath || !NavigationPath->IsValid() || NavigationPath->PathPoints.Num() < 2)
+    {
+        return false;
+    }
+
+    const TArray<FVector> DensePath = Controller->BuildDenseResampledPath(NavigationPath->PathPoints, Controller->GetDenseSampleSpacing());
+    if (DensePath.Num() < 2)
+    {
+        return false;
+    }
+
+    TArray<FVector> AffordablePathPoints = DensePath;
+    float AffordablePathDistanceCm = CalculatePathDistance(DensePath);
+    if (UTacticalTurnSubsystem *TacticalTurnSubsystem = GetTacticalTurnSubsystem())
+    {
+        if (TacticalTurnSubsystem->IsTurnModeActive())
+        {
+            BuildClampedTacticalPath(DensePath, MovingUnitComponent->GetRemainingMovementRange(), AffordablePathPoints, AffordablePathDistanceCm);
+        }
+    }
+
+    if (AffordablePathPoints.Num() < 2 || AffordablePathDistanceCm <= Controller->GetTacticalMinimumCommittedMoveDistance())
+    {
+        return false;
+    }
+
+    OutTraversalControlPath = Controller->BuildTraversalControlPath(AffordablePathPoints, Controller->GetTraversalControlPointSpacing());
+    OutCommittedDistanceCm = AffordablePathDistanceCm;
+    return OutTraversalControlPath.Num() >= 2;
+}
+
+bool UTacticalMovementControllerComponent::StartTraversalForUnit(ACRPGBaseCharacter *MovingUnit, const TArray<FVector> &PathPoints, float PendingDistanceConsumption, FOnTacticalTraversalCompleted CompletionDelegate)
+{
+    if (!MovingUnit || bHasActiveTacticalPath)
+    {
+        return false;
+    }
+
+    ActiveTraversalCharacter = MovingUnit;
+    TraversalCompletedDelegate = CompletionDelegate;
+    StartTacticalPathTraversal(PathPoints, PendingDistanceConsumption);
+    return bHasActiveTacticalPath;
+}
+
 ACRPGProjectPlayerController *UTacticalMovementControllerComponent::GetOwnerController() const
 {
     return OwningController.Get();
@@ -297,6 +369,22 @@ UTacticalPathPreviewComponent *UTacticalMovementControllerComponent::GetPathPrev
     }
 
     return nullptr;
+}
+
+ACRPGBaseCharacter *UTacticalMovementControllerComponent::GetTraversalCharacter() const
+{
+    if (ACRPGBaseCharacter *ExplicitTraversalCharacter = ActiveTraversalCharacter.Get())
+    {
+        return ExplicitTraversalCharacter;
+    }
+
+    const ACRPGProjectPlayerController *Controller = GetOwnerController();
+    return Controller ? Cast<ACRPGBaseCharacter>(Controller->GetPawn()) : nullptr;
+}
+
+ACharacter *UTacticalMovementControllerComponent::GetTraversalCharacterAsCharacter() const
+{
+    return Cast<ACharacter>(GetTraversalCharacter());
 }
 
 void UTacticalMovementControllerComponent::DisableTraversalAvoidance(ACharacter *ControlledCharacter)
@@ -720,14 +808,13 @@ void UTacticalMovementControllerComponent::UpdateTacticalMovePreviewFromHover()
 
 void UTacticalMovementControllerComponent::StartTacticalPathTraversal(const TArray<FVector> &PathPoints, float PendingDistanceConsumption)
 {
-    ACRPGProjectPlayerController *Controller = GetOwnerController();
-    ACharacter *ControlledCharacter = Controller ? Cast<ACharacter>(Controller->GetPawn()) : nullptr;
+    ACharacter *ControlledCharacter = GetTraversalCharacterAsCharacter();
     ActiveTacticalPathPoints = PathPoints;
     bHasActiveTacticalPath = ActiveTacticalPathPoints.Num() > 0;
     CurrentPathIndex = ActiveTacticalPathPoints.Num() > 1 ? 1 : 0;
     PendingPathDistanceConsumption = FMath::Max(0.0f, PendingDistanceConsumption);
     ActiveTraversalTravelledDistanceCm = 0.0f;
-    LastTraversalPawnLocation = Controller && Controller->GetPawn() ? Controller->GetPawn()->GetActorLocation() : FVector::ZeroVector;
+    LastTraversalPawnLocation = ControlledCharacter ? ControlledCharacter->GetActorLocation() : FVector::ZeroVector;
 
     // Traversal switches the pawn into a deterministic locomotion mode driven by AddMovementInput each tick.
     DisableTraversalAvoidance(ControlledCharacter);
@@ -744,7 +831,7 @@ void UTacticalMovementControllerComponent::UpdateTacticalPathTraversal(float Del
     }
 
     ACRPGProjectPlayerController *Controller = GetOwnerController();
-    ACharacter *ControlledCharacter = Controller ? Cast<ACharacter>(Controller->GetPawn()) : nullptr;
+    ACharacter *ControlledCharacter = GetTraversalCharacterAsCharacter();
     if (const ACRPGBaseCharacter *ControlledBaseCharacter = Cast<ACRPGBaseCharacter>(ControlledCharacter))
     {
         const UTacticalUnitComponent *ControlledUnit = ControlledBaseCharacter->GetTacticalUnitComponent();
@@ -820,6 +907,8 @@ void UTacticalMovementControllerComponent::RotatePawnTowardDirection(APawn *Cont
 void UTacticalMovementControllerComponent::HandleTacticalPathTraversalCompleted()
 {
     ACRPGProjectPlayerController *Controller = GetOwnerController();
+    ACRPGBaseCharacter *TraversalCharacter = GetTraversalCharacter();
+    UTacticalUnitComponent *TraversalUnitComponent = TraversalCharacter ? TraversalCharacter->GetTacticalUnitComponent() : nullptr;
     float ConsumedDistanceCm = PendingPathDistanceConsumption;
     if (!Controller || ConsumedDistanceCm <= Controller->GetTacticalMinimumCommittedMoveDistance())
     {
@@ -828,42 +917,40 @@ void UTacticalMovementControllerComponent::HandleTacticalPathTraversalCompleted(
 
     if (UTacticalTurnSubsystem *TacticalTurnSubsystem = GetTacticalTurnSubsystem())
     {
-        if (TacticalTurnSubsystem->IsTurnModeActive())
+        if (TacticalTurnSubsystem->IsTurnModeActive() && TraversalCharacter && TraversalUnitComponent)
         {
-            if (ACRPGBaseCharacter *ActiveUnit = TacticalTurnSubsystem->GetActiveUnit())
+            const float RemainingMovementRangeCm = TraversalUnitComponent->GetRemainingMovementRange();
+
+            if (RemainingMovementRangeCm - PendingPathDistanceConsumption <= Controller->GetTacticalMinimumCommittedMoveDistance() + KINDA_SMALL_NUMBER)
             {
-                if (UTacticalUnitComponent *TacticalUnitComponent = ActiveUnit->GetTacticalUnitComponent())
+                ConsumedDistanceCm = RemainingMovementRangeCm;
+            }
+
+            // Movement budget is consumed only after traversal finishes or is explicitly interrupted and committed.
+            TraversalUnitComponent->ConsumeMovement(ConsumedDistanceCm);
+
+            if (UGameInstance *GameInstance = Controller->GetGameInstance())
+            {
+                if (UEventBusSubsystem *EventBusSubsystem = GameInstance->GetSubsystem<UEventBusSubsystem>())
                 {
-                    const float RemainingMovementRangeCm = TacticalUnitComponent->GetRemainingMovementRange();
-
-                    if (RemainingMovementRangeCm - PendingPathDistanceConsumption <= Controller->GetTacticalMinimumCommittedMoveDistance() + KINDA_SMALL_NUMBER)
-                    {
-                        ConsumedDistanceCm = RemainingMovementRangeCm;
-                    }
-
-                    // Movement budget is consumed only after traversal finishes or is explicitly interrupted and committed.
-                    TacticalUnitComponent->ConsumeMovement(ConsumedDistanceCm);
-
-                    if (UGameInstance *GameInstance = Controller->GetGameInstance())
-                    {
-                        if (UEventBusSubsystem *EventBusSubsystem = GameInstance->GetSubsystem<UEventBusSubsystem>())
-                        {
-                            EventBusSubsystem->PublishEvent(
-                                TacticalMovementEvents::TacticalUnitMovementConsumed,
-                                FString::Printf(
-                                    TEXT("unit=%s;distance_cm=%.2f;remaining_cm=%.2f;round=%d"),
-                                    *ActiveUnit->GetName(),
-                                    ConsumedDistanceCm,
-                                    TacticalUnitComponent->GetRemainingMovementRange(),
-                                    TacticalTurnSubsystem->GetCurrentRound()));
-                        }
-                    }
+                    EventBusSubsystem->PublishEvent(
+                        TacticalMovementEvents::TacticalUnitMovementConsumed,
+                        FString::Printf(
+                            TEXT("unit=%s;distance_cm=%.2f;remaining_cm=%.2f;round=%d"),
+                            *TraversalCharacter->GetName(),
+                            ConsumedDistanceCm,
+                            TraversalUnitComponent->GetRemainingMovementRange(),
+                            TacticalTurnSubsystem->GetCurrentRound()));
                 }
             }
         }
     }
 
-    if (Controller)
+    if (TraversalCompletedDelegate.IsBound())
+    {
+        TraversalCompletedDelegate.Execute(TraversalCharacter);
+    }
+    else if (Controller && TraversalCharacter == Controller->GetPawn())
     {
         // Normal movement budget is consumed here first; only after that does the controller get a chance to resume
         // a deferred melee attack against the original target.
@@ -889,11 +976,17 @@ void UTacticalMovementControllerComponent::StopTacticalPrototypeMovement() const
         return;
     }
 
-    if (ACharacter *ControlledCharacter = Cast<ACharacter>(Controller->GetPawn()))
+    if (ACharacter *ControlledCharacter = GetTraversalCharacterAsCharacter())
     {
         ControlledCharacter->StopJumping();
-        ControlledCharacter->GetCharacterMovement()->StopMovementImmediately();
+        if (UCharacterMovementComponent *CharacterMovement = ControlledCharacter->GetCharacterMovement())
+        {
+            CharacterMovement->StopMovementImmediately();
+        }
     }
 
-    Controller->StopMovement();
+    if (Controller->GetPawn() == GetTraversalCharacter())
+    {
+        Controller->StopMovement();
+    }
 }

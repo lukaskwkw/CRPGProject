@@ -13,8 +13,9 @@ class ACRPGBaseCharacter;
 class UTacticalPathPreviewComponent;
 class UTacticalTurnSubsystem;
 
-UCLASS(ClassGroup = (Tactical), meta = (BlueprintSpawnableComponent))
-class CRPGPROJECT_API UTacticalMovementControllerComponent : public UActorComponent
+DECLARE_DELEGATE_OneParam(FOnTacticalTraversalCompleted, ACRPGBaseCharacter *)
+
+    UCLASS(ClassGroup = (Tactical), meta = (BlueprintSpawnableComponent)) class CRPGPROJECT_API UTacticalMovementControllerComponent : public UActorComponent
 {
     GENERATED_BODY()
 
@@ -36,12 +37,16 @@ public:
     const TArray<FVector> &GetActiveTacticalPathPoints() const;
     float GetAvailableMovementBudgetForPlanning() const;
     const FTacticalMovePreviewData &GetPendingMovePreview() const;
+    bool TryBuildTraversalToDestinationForUnit(ACRPGBaseCharacter *MovingUnit, const FVector &Destination, TArray<FVector> &OutTraversalControlPath, float &OutCommittedDistanceCm) const;
+    bool StartTraversalForUnit(ACRPGBaseCharacter *MovingUnit, const TArray<FVector> &PathPoints, float PendingDistanceConsumption, FOnTacticalTraversalCompleted CompletionDelegate = FOnTacticalTraversalCompleted());
 
 private:
     // Private helpers split into four concerns: controller access, preview building, traversal, and cleanup/restoration.
     ACRPGProjectPlayerController *GetOwnerController() const;
     UTacticalTurnSubsystem *GetTacticalTurnSubsystem() const;
     UTacticalPathPreviewComponent *GetPathPreviewComponent() const;
+    ACRPGBaseCharacter *GetTraversalCharacter() const;
+    ACharacter *GetTraversalCharacterAsCharacter() const;
     void DisableTraversalAvoidance(ACharacter *ControlledCharacter);
     void RestoreTraversalAvoidance();
     void DisableTraversalPawnCollision(ACharacter *ControlledCharacter);
@@ -106,4 +111,9 @@ private:
 
     UPROPERTY(Transient)
     FTacticalMovePreviewData PendingMovePreview;
+
+    UPROPERTY(Transient)
+    TWeakObjectPtr<ACRPGBaseCharacter> ActiveTraversalCharacter;
+
+    FOnTacticalTraversalCompleted TraversalCompletedDelegate;
 };

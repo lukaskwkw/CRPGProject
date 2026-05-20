@@ -7,6 +7,7 @@
 #include "Engine/EngineTypes.h"
 #include "Framework/Characters/CRPGBaseCharacter.h"
 #include "Tactical/Components/TacticalMovementControllerComponent.h"
+#include "Tactical/Rules/TacticalCombatHelpers.h"
 #include "Tactical/Components/TacticalUnitComponent.h"
 #include "Tactical/Subsystems/TacticalTurnSubsystem.h"
 
@@ -79,22 +80,12 @@ bool ACRPGProjectPlayerController::TryGetCombatTargetingPreviewDestination(FVect
     const ACRPGBaseCharacter *SelectedUnit = Cast<ACRPGBaseCharacter>(GetPawn());
     const UTacticalUnitComponent *Attacker = SelectedUnit ? SelectedUnit->GetTacticalUnitComponent() : nullptr;
     UTacticalUnitComponent *TargetUnit = ResolveUnitUnderCursor();
-    if (!IsValidCombatTarget(Attacker, TargetUnit))
+    if (!TacticalCombatHelpers::IsValidCombatTarget(Attacker, TargetUnit))
     {
         return false;
     }
 
-    if (IsTargetInCombatRange(Attacker, TargetUnit, PendingCombatAction))
-    {
-        return false;
-    }
-
-    const FVector AttackerLocation = Attacker->GetOccupiedLocation();
-    const FVector TargetLocation = TargetUnit->GetOccupiedLocation();
-    FVector ApproachDirection = AttackerLocation - TargetLocation;
-    ApproachDirection.Z = 0.0f;
-
-    if (!ApproachDirection.Normalize())
+    if (TacticalCombatHelpers::IsTargetInCombatRange(Attacker, TargetUnit, PendingCombatAction, CombatRangeToleranceCm))
     {
         return false;
     }
@@ -102,12 +93,7 @@ bool ACRPGProjectPlayerController::TryGetCombatTargetingPreviewDestination(FVect
     // The destination is not the enemy location itself. It is the closest straight-line point that would place
     // the attacker safely inside the relevant legal range once occupied radii, nav projection, and traversal acceptance
     // are taken into account.
-    const float AttackRangeCm = PendingCombatAction == ECombatActionType::MeleeAttack ? Attacker->GetMeleeRangeCm() : Attacker->GetRangedRangeCm();
-    const float DesiredCenterDistanceCm = FMath::Max(
-        0.0f,
-        AttackRangeCm + Attacker->GetOccupancyRadiusCm() + TargetUnit->GetOccupancyRadiusCm() - CombatApproachBufferCm);
-    OutDestination = TargetLocation + (ApproachDirection * DesiredCenterDistanceCm);
-    return true;
+    return TacticalCombatHelpers::TryGetApproachDestinationInRange(Attacker, TargetUnit, PendingCombatAction, CombatApproachBufferCm, OutDestination);
 }
 
 UTacticalUnitComponent *ACRPGProjectPlayerController::ResolveUnitUnderCursor() const
@@ -179,29 +165,17 @@ void ACRPGProjectPlayerController::SetCombatTargetHighlight(UTacticalUnitCompone
 
 bool ACRPGProjectPlayerController::IsValidCombatTarget(const UTacticalUnitComponent *Attacker, const UTacticalUnitComponent *Defender) const
 {
-    return Attacker && Defender && Attacker != Defender && Attacker->CanAct() && Defender->IsAlive() && Attacker->IsEnemyTo(Defender);
+    return TacticalCombatHelpers::IsValidCombatTarget(Attacker, Defender);
 }
 
 float ACRPGProjectPlayerController::GetCombatGapToTargetCm(const UTacticalUnitComponent *Attacker, const UTacticalUnitComponent *Defender) const
 {
-    if (!IsValidCombatTarget(Attacker, Defender))
-    {
-        return TNumericLimits<float>::Max();
-    }
-
-    const float CenterDistanceCm = FVector::Dist2D(Attacker->GetOccupiedLocation(), Defender->GetOccupiedLocation());
-    return FMath::Max(0.0f, CenterDistanceCm - Attacker->GetOccupancyRadiusCm() - Defender->GetOccupancyRadiusCm());
+    return TacticalCombatHelpers::GetCombatGapToTargetCm(Attacker, Defender);
 }
 
 bool ACRPGProjectPlayerController::IsTargetInCombatRange(const UTacticalUnitComponent *Attacker, const UTacticalUnitComponent *Defender, ECombatActionType ActionType) const
 {
-    if (!IsValidCombatTarget(Attacker, Defender))
-    {
-        return false;
-    }
-
-    const float RequiredRangeCm = ActionType == ECombatActionType::MeleeAttack ? Attacker->GetMeleeRangeCm() : Attacker->GetRangedRangeCm();
-    return GetCombatGapToTargetCm(Attacker, Defender) <= RequiredRangeCm + CombatRangeToleranceCm;
+    return TacticalCombatHelpers::IsTargetInCombatRange(Attacker, Defender, ActionType, CombatRangeToleranceCm);
 }
 
 bool ACRPGProjectPlayerController::TryExecutePendingCombatAction(UTacticalUnitComponent *TargetUnit)

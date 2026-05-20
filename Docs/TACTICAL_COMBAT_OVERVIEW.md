@@ -11,6 +11,7 @@ Current prototype combat supports:
 - hover-based target acquisition on enemy units
 - move-into-range preview for melee and ranged attacks
 - melee move-then-attack follow-up after traversal
+- deterministic enemy turn automation for basic tactical attacks
 - d20 hit resolution with attack bonuses and armor class
 - critical hits on natural `20`
 - HP loss, death transition, hover highlight, and floating combat text
@@ -55,6 +56,7 @@ The movement component owns locomotion and preview execution.
 - reuses the same nav/path preview system used by tactical movement
 - commits the movement when an out-of-range attack click should close distance
 - calls back into the controller when traversal finishes, so deferred melee attacks can resume through the normal validation path
+- exposes unit-scoped traversal helpers so enemy turns can reuse the same movement budget and locomotion rules without AI path following
 
 ### `UCombatResolverSubsystem`
 
@@ -71,6 +73,22 @@ The combat resolver owns rule resolution.
 - triggers target-side combat feedback presentation
 
 The resolver decides `whether the attack hits` and `how much damage it deals`.
+
+### `UTacticalEnemyTurnExecutorSubsystem`
+
+The enemy turn executor owns basic autonomous enemy turn orchestration.
+
+- listens for active tactical unit changes through EventBus
+- detects when the active unit is hostile to the local player side
+- applies a short execution delay before acting
+- focuses the tactical camera on the acting enemy
+- finds the nearest alive hostile target
+- reuses the same movement stack to move into legal attack range
+- reuses the same combat execution stack to play montages and resolve hit windows
+- ends the turn automatically when no legal action remains or after attack completion
+
+The executor decides `when the enemy should move, attack, or end turn`.
+It does not own locomotion, hit math, or animation timing.
 
 ### `UTacticalUnitComponent`
 
@@ -141,6 +159,12 @@ When the player clicks a hovered enemy:
 - if melee is out of range, the previewed path is committed and the melee action is deferred until traversal completes
 - if ranged is out of range, the unit moves into range and then stops, requiring a second explicit attack click by design
 
+Enemy turns differ slightly here:
+
+- enemy melee uses the same move-then-attack follow-up pattern
+- enemy ranged currently auto-attacks after traversal if range becomes legal
+- both player and enemy attacks rotate the attacker toward the defender before attack execution starts
+
 ### 6. Deferred melee completion
 
 For melee move-then-attack:
@@ -151,6 +175,43 @@ For melee move-then-attack:
 - if range is now valid, the same in-range resolver call executes
 
 This keeps melee follow-up using the same validation logic as a direct in-range click instead of introducing a separate hidden code path.
+
+## Enemy Turn Flow
+
+Enemy turns currently use a simple deterministic executor.
+
+### 1. Active-unit handoff
+
+- `UTacticalTurnSubsystem` publishes `tactical_active_unit_changed`
+- `UTacticalEnemyTurnExecutorSubsystem` listens through EventBus
+- if the active unit is a hostile non-neutral combatant, execution is scheduled after a short delay
+
+### 2. Target selection
+
+- the executor searches registered tactical units
+- dead and neutral units are ignored
+- same-side units are ignored
+- the nearest alive hostile target is selected by world-space distance
+
+### 3. Action choice
+
+- combat style determines whether melee or ranged attack is preferred
+- if the target is already in legal range, the enemy rotates toward the target and attacks immediately
+- if not, the executor computes an approach point that would enter legal range
+
+### 4. Move into range
+
+- movement planning still uses the normal navmesh-based tactical traversal stack
+- movement budget is clamped and consumed normally
+- no `AIController`, `SimpleMoveToLocation`, Behavior Tree, or EQS pathing is used
+- when traversal completes, the executor re-validates range and resumes the attack flow
+
+### 5. Attack and turn end
+
+- attack execution still goes through `UCombatExecutionSubsystem`
+- montage timing and hit-notify commit still stay animation-driven
+- action points are consumed through the normal combat path
+- the enemy turn ends automatically after the attack resolves or when no legal action remains
 
 ## Combat Rule Details
 
@@ -217,5 +278,18 @@ The next safe refactors are:
 
 1. extract EventBus payload parsing/building into small helpers or typed structs
 2. split additional tactical UI/selection code out of `ACRPGProjectPlayerController.cpp`
-3. formalize combat rules into data assets or DSL-backed authoring once prototype tuning stabilizes
-4. replace the temporary text-render combat feedback with a proper world-space widget or Niagara-driven presentation layer
+3. formalize enemy-turn evaluation inputs into data assets or DSL-backed authoring once prototype tuning stabilizes
+4. replace EventBus string payload parsing in enemy-turn orchestration with typed helpers or structs
+5. replace the temporary text-render combat feedback with a proper world-space widget or Niagara-driven presentation layer
+
+## Current Limits
+
+The current enemy AI slice is intentionally narrow.
+
+- no Behavior Trees
+- no EQS
+- no perception system
+- no weapon swapping or stance optimization
+- no consumable use such as healing potions
+- no waiting for camera settle before movement begins
+- no advanced tactical heuristics beyond nearest-target deterministic execution

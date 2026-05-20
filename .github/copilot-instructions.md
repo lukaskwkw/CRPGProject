@@ -123,6 +123,9 @@ When generating code:
 - Do not introduce Blueprint-heavy solutions
 - Do not create unnecessary abstractions
 - Keep systems modular and decoupled
+- For current tactical combat AI, treat `UTacticalEnemyTurnExecutorSubsystem` as the owner of basic deterministic enemy turn automation.
+- Keep tactical enemy turns lightweight and deterministic: nearest-hostile targeting, existing movement traversal reuse, and existing combat execution reuse.
+- Do not jump straight to Behavior Trees, EQS, perception, consumable logic, or advanced weapon-swap heuristics unless explicitly requested.
 
 If uncertain, ask for clarification rather than guessing architecture.
 
@@ -146,6 +149,10 @@ Already implemented:
 - GameCoreSubsystem
 - CRPGBaseCharacter (GAS-ready)
 - CRPGAttributeSet
+- TacticalTurnSubsystem
+- CombatResolverSubsystem
+- CombatExecutionSubsystem
+- TacticalEnemyTurnExecutorSubsystem
 
 ---
 
@@ -157,6 +164,8 @@ Already implemented:
 - QuestSubsystem
 - AIBehaviorSubsystem
 - CameraModeSubsystem
+
+`AIBehaviorSubsystem` should be treated as a future higher-level behavior layer, not a replacement for the current basic tactical enemy turn executor.
 
 ---
 
@@ -229,3 +238,168 @@ Always organize new classes by bounded gameplay domain:
 - Utilities/\*
 
 Subsystems must live inside their owning domain's Subsystems folder. Components must live inside their owning domain's Components folder. Controllers must live inside Framework/Controllers. Base gameplay characters must live inside Framework/Characters. Combat GAS classes must live inside Combat/\*.
+
+# Multiplayer-Safe Gameplay Architecture (IMPORTANT)
+
+The project is currently developed as a singleplayer CRPG prototype.
+
+However, the gameplay architecture MUST remain compatible with a future server-authoritative multiplayer PvP/PvE model.
+
+This does NOT mean implementing networking now.
+
+It means:
+all gameplay systems should avoid architectural decisions that would make future multiplayer impossible or extremely difficult.
+
+---
+
+# Core Architectural Rules
+
+## Gameplay Authority
+
+Gameplay state changes should never originate directly from:
+
+- UI widgets
+- animation blueprints
+- cosmetic systems
+- visual effects
+
+Instead:
+
+Player/UI/Input
+-> action request
+-> gameplay validation
+-> subsystem/domain authority
+-> gameplay state mutation
+-> event broadcast
+-> presentation update
+
+This separation is extremely important.
+
+---
+
+# Combat Authority
+
+Combat calculations must remain centralized.
+
+CombatResolverSubsystem is the gameplay authority for:
+
+- attack rolls
+- damage
+- hit validation
+- combat outcomes
+- kill detection
+
+UI and animations must never directly apply gameplay damage.
+
+---
+
+# Tactical Authority
+
+TacticalTurnSubsystem is authoritative for:
+
+- initiative order
+- active unit ownership
+- turn progression
+- round progression
+- encounter state
+
+No UI system should directly manipulate turn state.
+
+---
+
+# Presentation Separation
+
+Animation systems are presentation layers.
+
+Animation montages:
+
+- visualize combat execution
+- synchronize timing
+- trigger notifies
+
+But animation systems must NOT:
+
+- own combat rules
+- calculate damage
+- mutate gameplay state directly
+
+---
+
+# Event-Driven Architecture
+
+Gameplay systems should communicate through:
+
+- subsystems
+- events
+- requests
+- state queries
+
+Avoid:
+
+- tightly coupled direct references
+- gameplay logic embedded in widgets
+- gameplay logic embedded in animation blueprints
+
+---
+
+# Multiplayer-Safe Design Principles
+
+Even in singleplayer mode:
+
+- gameplay execution should conceptually support future server authority
+- gameplay requests should be separable from gameplay execution
+- deterministic gameplay systems are preferred
+- combat RNG should remain centralized
+- gameplay state should remain serializable
+- gameplay systems should avoid hidden local state mutations
+
+---
+
+# Input Model
+
+PlayerController should primarily:
+
+- gather input
+- perform local previews
+- issue gameplay requests
+
+Subsystems should:
+
+- validate
+- execute
+- mutate gameplay state
+
+---
+
+# UI Philosophy
+
+UI is considered:
+presentation only.
+
+UI may:
+
+- display gameplay state
+- issue gameplay requests
+
+UI must NOT:
+
+- directly modify gameplay authority state
+
+---
+
+# Future Networking Considerations
+
+Future multiplayer may include:
+
+- turn-based PvP combat
+- co-op tactical encounters
+- real-time multiplayer exploration variants
+
+Current architecture should therefore remain:
+
+- subsystem-oriented
+- event-driven
+- authority-separated
+- deterministic where possible
+
+without implementing full replication yet.
