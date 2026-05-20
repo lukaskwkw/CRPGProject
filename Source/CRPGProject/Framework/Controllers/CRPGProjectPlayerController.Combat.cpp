@@ -2,6 +2,7 @@
 
 #include "CRPGProjectPlayerController.h"
 
+#include "Combat/Subsystems/CombatExecutionSubsystem.h"
 #include "Combat/Subsystems/CombatResolverSubsystem.h"
 #include "Engine/EngineTypes.h"
 #include "Framework/Characters/CRPGBaseCharacter.h"
@@ -17,7 +18,7 @@ void ACRPGProjectPlayerController::EnterCombatTargetingMode(ECombatActionType Ac
     UTacticalUnitComponent *SelectedUnitComponent = SelectedUnit ? SelectedUnit->GetTacticalUnitComponent() : nullptr;
     const bool bIsTurnModeActive = TacticalTurnSubsystem && TacticalTurnSubsystem->IsTurnModeActive();
 
-    if (!SelectedUnit || !SelectedUnitComponent || !SelectedUnitComponent->IsAlive() || (bIsTurnModeActive && SelectedUnit != ActiveUnit))
+    if (!SelectedUnit || !SelectedUnitComponent || !SelectedUnitComponent->CanAct() || (bIsTurnModeActive && SelectedUnit != ActiveUnit))
     {
         ClearCombatTargetingMode();
         return;
@@ -178,7 +179,7 @@ void ACRPGProjectPlayerController::SetCombatTargetHighlight(UTacticalUnitCompone
 
 bool ACRPGProjectPlayerController::IsValidCombatTarget(const UTacticalUnitComponent *Attacker, const UTacticalUnitComponent *Defender) const
 {
-    return Attacker && Defender && Attacker != Defender && Attacker->IsAlive() && Defender->IsAlive() && Attacker->IsEnemyTo(Defender);
+    return Attacker && Defender && Attacker != Defender && Attacker->CanAct() && Defender->IsAlive() && Attacker->IsEnemyTo(Defender);
 }
 
 float ACRPGProjectPlayerController::GetCombatGapToTargetCm(const UTacticalUnitComponent *Attacker, const UTacticalUnitComponent *Defender) const
@@ -258,21 +259,14 @@ bool ACRPGProjectPlayerController::TryExecutePendingCombatAction(UTacticalUnitCo
         }
     }
 
-    UCombatResolverSubsystem *CombatResolverSubsystem = GetCombatResolverSubsystem();
-    if (!CombatResolverSubsystem)
+    UCombatExecutionSubsystem *CombatExecutionSubsystem = GetCombatExecutionSubsystem();
+    if (!CombatExecutionSubsystem)
     {
         return false;
     }
 
-    switch (PendingCombatAction)
+    if (!CombatExecutionSubsystem->RequestAttackExecution(Attacker, TargetUnit, PendingCombatAction, false))
     {
-    case ECombatActionType::MeleeAttack:
-        CombatResolverSubsystem->ResolveMeleeAttack(Attacker, TargetUnit);
-        break;
-    case ECombatActionType::RangedAttack:
-        CombatResolverSubsystem->ResolveRangedAttack(Attacker, TargetUnit);
-        break;
-    default:
         return false;
     }
 
@@ -298,10 +292,32 @@ void ACRPGProjectPlayerController::HandleTacticalTraversalCompleted()
     const ECombatTargetingMode PreviousTargetingMode = CurrentTargetingMode;
     PendingCombatAction = DeferredAction;
     CurrentTargetingMode = ECombatTargetingMode::EnemyUnit;
-    TryExecutePendingCombatAction(DeferredTargetUnit);
+    if (ACRPGBaseCharacter *SelectedUnit = Cast<ACRPGBaseCharacter>(GetPawn()))
+    {
+        if (UTacticalUnitComponent *Attacker = SelectedUnit->GetTacticalUnitComponent())
+        {
+            if (IsTargetInCombatRange(Attacker, DeferredTargetUnit, DeferredAction))
+            {
+                if (UCombatExecutionSubsystem *CombatExecutionSubsystem = GetCombatExecutionSubsystem())
+                {
+                    CombatExecutionSubsystem->RequestAttackExecution(Attacker, DeferredTargetUnit, DeferredAction, true);
+                }
+            }
+        }
+    }
     PendingCombatAction = PreviousPendingAction;
     CurrentTargetingMode = PreviousTargetingMode;
     RefreshTacticalCombatHUD();
+}
+
+UCombatExecutionSubsystem *ACRPGProjectPlayerController::GetCombatExecutionSubsystem() const
+{
+    if (UGameInstance *GameInstance = GetGameInstance())
+    {
+        return GameInstance->GetSubsystem<UCombatExecutionSubsystem>();
+    }
+
+    return nullptr;
 }
 
 UCombatResolverSubsystem *ACRPGProjectPlayerController::GetCombatResolverSubsystem() const

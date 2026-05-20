@@ -11,10 +11,12 @@ Use this file as compact current-state context for future coding chats. It is in
 - Turn mode can be entered by user demand now; combat-driven entry is planned later
 - `ACRPGProjectCharacter` inherits from `ACRPGBaseCharacter`
 - `ACRPGBaseCharacter` owns GAS-ready gameplay foundations, including `AbilitySystemComponent`, `AttributeSet`, and `UTacticalUnitComponent`
+- `ACRPGBaseCharacter` now also owns `UCombatLoadoutComponent` plus per-slot equipment visual components for runtime weapon attachment
 - `ACRPGProjectPlayerController` is the tactical orchestration center
 - NavigationSystem is used for path calculation only
 - Actual tactical locomotion is manual per-frame `AddMovementInput`
 - `UTacticalTurnSubsystem` manages turn-state flow independently of camera mode
+- `UTacticalTurnSubsystem` now synchronizes loadout `StanceContext` between `Exploration` and `CombatReady` for registered `ACRPGBaseCharacter` units when turn mode is toggled
 - `UTacticalCombatHUDWidget` exists as a temporary native prototype HUD
 
 ## Important Current Boundaries
@@ -72,6 +74,17 @@ Use this file as compact current-state context for future coding chats. It is in
 - Combat GAS classes belong in `Combat/*`
 - Future systems should remain compatible with later DSL-driven content authoring
 - UI-facing systems should expose clean state because long-term UI direction is Web UI + React, even though native UMG is still used for prototyping
+
+## Current Loadout And Animation Rules
+
+- `UCombatLoadoutComponent` is the source of truth for combat style, stance, animation profiles, equipped variants, and resolved attack montage selection
+- Current style categories are `Unarmed`, `Bow`, `TwoHanded`, `Shield`, and `TwoWeapons`
+- Idle and locomotion are both stance-sensitive; exploration and combat-ready may map to different authored profiles for the same style
+- AnimBP should read runtime-facing values from `ACRPGBaseCharacter`, especially `GetCurrentIdleProfile()` and `GetCurrentLocomotionProfile()`, rather than owning gameplay state
+- Runtime equipment attachment currently uses slots `MainHand`, `OffHand`, `TwoHanded`, and `Ranged`
+- Default socket mapping is `MainHand -> hand_r_socket`, `OffHand -> hand_l_socket`, `TwoHanded -> hand_r_socket`, `Ranged -> spine_socket`
+- For shared runtime weapon attachment, prefer normal skeleton sockets over mesh sockets; mesh-socket preview can be correct while runtime attachment fails on a different mesh asset using the same skeleton
+- If a preview asset already sits correctly on the intended runtime socket, keep `RelativeTransform` at identity and do not compensate a socket problem with transform offsets first
 
 ## Recommended Near-Term Next Step
 

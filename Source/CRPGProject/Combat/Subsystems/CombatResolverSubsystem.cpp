@@ -28,15 +28,75 @@ namespace
 
 FCombatAttackResult UCombatResolverSubsystem::ResolveMeleeAttack(UTacticalUnitComponent *Attacker, UTacticalUnitComponent *Defender)
 {
-    return ResolveAttack(Attacker, Defender, ECombatActionType::MeleeAttack);
+    return ResolveAttack(Attacker, Defender, ECombatActionType::MeleeAttack, true);
 }
 
 FCombatAttackResult UCombatResolverSubsystem::ResolveRangedAttack(UTacticalUnitComponent *Attacker, UTacticalUnitComponent *Defender)
 {
-    return ResolveAttack(Attacker, Defender, ECombatActionType::RangedAttack);
+    return ResolveAttack(Attacker, Defender, ECombatActionType::RangedAttack, true);
 }
 
-FCombatAttackResult UCombatResolverSubsystem::ResolveAttack(UTacticalUnitComponent *Attacker, UTacticalUnitComponent *Defender, ECombatActionType ActionType)
+FCombatAttackResult UCombatResolverSubsystem::ResolveAttackForExecution(UTacticalUnitComponent *Attacker, UTacticalUnitComponent *Defender, ECombatActionType ActionType)
+{
+    return ResolveAttack(Attacker, Defender, ActionType, false);
+}
+
+void UCombatResolverSubsystem::CommitResolvedAttack(UTacticalUnitComponent *Attacker, UTacticalUnitComponent *Defender, ECombatActionType ActionType, const FCombatAttackResult &Result)
+{
+    if (!IsValid(Attacker) || !IsValid(Defender) || Attacker == Defender)
+    {
+        return;
+    }
+
+    const bool bIsMeleeAttack = ActionType == ECombatActionType::MeleeAttack;
+
+    if (Result.bHit)
+    {
+        Defender->ApplyDamage(Result.DamageRoll);
+
+        const bool bKilledTarget = Defender->IsDead();
+        PublishEvent(
+            CombatResolverEvents::UnitDamaged,
+            FString::Printf(
+                TEXT("target=%s;damage=%d;current_hp=%d;max_hp=%d"),
+                *GetNameSafe(Defender->GetOwner()),
+                Result.DamageRoll,
+                Defender->GetCurrentHP(),
+                Defender->GetMaxHP()));
+
+        if (bKilledTarget)
+        {
+            PublishEvent(
+                CombatResolverEvents::UnitKilled,
+                FString::Printf(
+                    TEXT("target=%s;attacker=%s;action=%s"),
+                    *GetNameSafe(Defender->GetOwner()),
+                    *GetNameSafe(Attacker->GetOwner()),
+                    bIsMeleeAttack ? TEXT("melee") : TEXT("ranged")));
+        }
+    }
+
+    if (ACRPGBaseCharacter *DefenderCharacter = Cast<ACRPGBaseCharacter>(Defender->GetOwner()))
+    {
+        DefenderCharacter->ShowCombatAttackResult(Result);
+    }
+
+    PublishEvent(
+        CombatResolverEvents::AttackResolved,
+        FString::Printf(
+            TEXT("attacker=%s;defender=%s;action=%s;hit=%s;critical=%s;attack_roll=%d;natural_roll=%d;damage_roll=%d;killed=%s"),
+            *GetNameSafe(Attacker->GetOwner()),
+            *GetNameSafe(Defender->GetOwner()),
+            bIsMeleeAttack ? TEXT("melee") : TEXT("ranged"),
+            Result.bHit ? TEXT("true") : TEXT("false"),
+            Result.bCriticalHit ? TEXT("true") : TEXT("false"),
+            Result.AttackRoll,
+            Result.NaturalRoll,
+            Result.DamageRoll,
+            Defender->IsDead() ? TEXT("true") : TEXT("false")));
+}
+
+FCombatAttackResult UCombatResolverSubsystem::ResolveAttack(UTacticalUnitComponent *Attacker, UTacticalUnitComponent *Defender, ECombatActionType ActionType, bool bCommitImmediately)
 {
     FCombatAttackResult Result;
 
@@ -49,6 +109,8 @@ FCombatAttackResult UCombatResolverSubsystem::ResolveAttack(UTacticalUnitCompone
     {
         return Result;
     }
+
+    Result.bWasResolved = true;
 
     const int32 RawD20Roll = FMath::RandRange(1, 20);
     const bool bIsMeleeAttack = ActionType == ECombatActionType::MeleeAttack;
@@ -68,51 +130,14 @@ FCombatAttackResult UCombatResolverSubsystem::ResolveAttack(UTacticalUnitCompone
         {
             Result.DamageRoll += RollAttackDamage(Attacker, bIsMeleeAttack);
         }
-
-        Defender->ApplyDamage(Result.DamageRoll);
-        Result.bKilledTarget = Defender->IsDead();
-
-        PublishEvent(
-            CombatResolverEvents::UnitDamaged,
-            FString::Printf(
-                TEXT("target=%s;damage=%d;current_hp=%d;max_hp=%d"),
-                *GetNameSafe(Defender->GetOwner()),
-                Result.DamageRoll,
-                Defender->GetCurrentHP(),
-                Defender->GetMaxHP()));
-
-        if (Result.bKilledTarget)
-        {
-            PublishEvent(
-                CombatResolverEvents::UnitKilled,
-                FString::Printf(
-                    TEXT("target=%s;attacker=%s;action=%s"),
-                    *GetNameSafe(Defender->GetOwner()),
-                    *GetNameSafe(Attacker->GetOwner()),
-                    bIsMeleeAttack ? TEXT("melee") : TEXT("ranged")));
-        }
     }
 
-    if (ACRPGBaseCharacter *DefenderCharacter = Cast<ACRPGBaseCharacter>(Defender->GetOwner()))
+    Result.bKilledTarget = Result.bHit && Result.DamageRoll >= Defender->GetCurrentHP();
+
+    if (bCommitImmediately)
     {
-        // Combat presentation stays on the pawn so future VFX/widget upgrades can swap the implementation
-        // without touching controller or subsystem orchestration.
-        DefenderCharacter->ShowCombatAttackResult(Result);
+        CommitResolvedAttack(Attacker, Defender, ActionType, Result);
     }
-
-    PublishEvent(
-        CombatResolverEvents::AttackResolved,
-        FString::Printf(
-            TEXT("attacker=%s;defender=%s;action=%s;hit=%s;critical=%s;attack_roll=%d;natural_roll=%d;damage_roll=%d;killed=%s"),
-            *GetNameSafe(Attacker->GetOwner()),
-            *GetNameSafe(Defender->GetOwner()),
-            bIsMeleeAttack ? TEXT("melee") : TEXT("ranged"),
-            Result.bHit ? TEXT("true") : TEXT("false"),
-            Result.bCriticalHit ? TEXT("true") : TEXT("false"),
-            Result.AttackRoll,
-            Result.NaturalRoll,
-            Result.DamageRoll,
-            Result.bKilledTarget ? TEXT("true") : TEXT("false")));
 
     return Result;
 }

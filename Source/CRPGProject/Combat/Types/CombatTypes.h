@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "CombatTypes.generated.h"
 
+class UTacticalUnitComponent;
+
 UENUM(BlueprintType)
 enum class ECombatActionType : uint8
 {
@@ -18,10 +20,30 @@ enum class ECombatTargetingMode : uint8
     EnemyUnit UMETA(DisplayName = "Enemy Unit")
 };
 
+UENUM(BlueprintType)
+enum class ECombatUnitState : uint8
+{
+    Alive UMETA(DisplayName = "Alive"),
+    Prone UMETA(DisplayName = "Prone"),
+    Dead UMETA(DisplayName = "Dead")
+};
+
+UENUM(BlueprintType)
+enum class ECombatReactionDirection : uint8
+{
+    Front UMETA(DisplayName = "Front"),
+    Back UMETA(DisplayName = "Back"),
+    Left UMETA(DisplayName = "Left"),
+    Right UMETA(DisplayName = "Right")
+};
+
 USTRUCT(BlueprintType)
 struct CRPGPROJECT_API FCombatAttackResult
 {
     GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Combat")
+    bool bWasResolved = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Combat")
     bool bHit = false;
@@ -41,4 +63,36 @@ struct CRPGPROJECT_API FCombatAttackResult
 
     UPROPERTY(BlueprintReadOnly, Category = "Combat")
     bool bKilledTarget = false;
+};
+
+USTRUCT(BlueprintType)
+struct CRPGPROJECT_API FPendingCombatAttack
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Combat")
+    TObjectPtr<UTacticalUnitComponent> Attacker = nullptr;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Combat")
+    TObjectPtr<UTacticalUnitComponent> Defender = nullptr;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Combat")
+    ECombatActionType ActionType = ECombatActionType::None;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Combat")
+    FCombatAttackResult ResolvedResult;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Combat")
+    bool bHasResolvedResult = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Combat")
+    bool bMissReactionTriggered = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Combat")
+    bool bTriggeredAfterTraversal = false;
+
+    bool IsValid() const
+    {
+        return Attacker != nullptr && Defender != nullptr && ActionType != ECombatActionType::None;
+    }
 };

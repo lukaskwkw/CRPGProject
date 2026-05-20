@@ -21,8 +21,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Combat")
     FCombatAttackResult ResolveRangedAttack(UTacticalUnitComponent *Attacker, UTacticalUnitComponent *Defender);
 
+    FCombatAttackResult ResolveAttackForExecution(UTacticalUnitComponent *Attacker, UTacticalUnitComponent *Defender, ECombatActionType ActionType);
+
+    void CommitResolvedAttack(UTacticalUnitComponent *Attacker, UTacticalUnitComponent *Defender, ECombatActionType ActionType, const FCombatAttackResult &Result);
+
 private:
-    FCombatAttackResult ResolveAttack(UTacticalUnitComponent *Attacker, UTacticalUnitComponent *Defender, ECombatActionType ActionType);
+    FCombatAttackResult ResolveAttack(UTacticalUnitComponent *Attacker, UTacticalUnitComponent *Defender, ECombatActionType ActionType, bool bCommitImmediately);
     // EventBus remains the decoupling seam for logs, future reactions, and UI listeners that should not depend on this subsystem directly.
     void PublishEvent(const FString &EventName, const FString &Payload) const;
 };

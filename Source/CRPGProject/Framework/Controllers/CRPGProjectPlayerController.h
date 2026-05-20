@@ -10,6 +10,7 @@
 #include "CRPGProjectPlayerController.generated.h"
 
 class UCameraControllerComponent;
+class UCombatExecutionSubsystem;
 class UCombatResolverSubsystem;
 class UInputMappingContext;
 class ACRPGBaseCharacter;
@@ -185,6 +186,8 @@ protected:
     bool TryExecutePendingCombatAction(UTacticalUnitComponent *TargetUnit);
     /** Handles any deferred melee follow-up after tactical traversal completes. */
     void HandleTacticalTraversalCompleted();
+    /** Resolves the combat execution subsystem from the current game instance. */
+    UCombatExecutionSubsystem *GetCombatExecutionSubsystem() const;
     /** Resolves the combat resolver subsystem from the current game instance. */
     UCombatResolverSubsystem *GetCombatResolverSubsystem() const;
     virtual void OnPossess(APawn *InPawn) override;

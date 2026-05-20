@@ -94,6 +94,8 @@ private:
     void PublishEvent(const FString &EventName, const FString &Payload) const;
     /** Refreshes per-character navigation blockers to match the latest active-unit state. */
     void RefreshRegisteredUnitNavigationBlockers() const;
+    /** Keeps character animation/loadout stance aligned with tactical turn mode activation. */
+    void RefreshRegisteredUnitCombatStances() const;
     /** Resolves cached subsystem dependencies lazily after startup or world changes. */
     void CacheSubsystemDependencies();
     /** Sorts initiative entries from highest initiative to lowest. */

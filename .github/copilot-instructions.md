@@ -191,6 +191,16 @@ Interactable approach preview belongs in the tactical movement pipeline, but out
 
 ---
 
+## 13.1 Tactical Loadout And Attachment Rules
+
+- Keep combat style/loadout runtime state in dedicated components such as `UCombatLoadoutComponent`, not in controllers or `UTacticalUnitComponent`.
+- Treat combat style, stance context, equipped variants, and animation profile selection as related but distinct concerns.
+- For runtime weapon attachment shared across characters using the same skeleton, prefer normal skeleton sockets over mesh sockets unless a mesh-specific override is explicitly intended.
+- Do not use transform offsets to paper over a bad socket source first; if preview attachment is correct on the intended runtime socket, leave the variant relative transform at identity.
+- Let turn-mode state drive combat-ready stance transitions for registered tactical characters rather than baking stance decisions into AnimBP or controller input flow.
+
+---
+
 ## 14. Tactical Outline And Interactable Rules
 
 - Keep one shared `CustomStencil`-driven outline pipeline rather than separate rendering paths for units and interactables.

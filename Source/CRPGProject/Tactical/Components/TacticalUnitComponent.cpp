@@ -8,6 +8,8 @@
 namespace TacticalUnitEvents
 {
     static const FString TacticalUnitDied = TEXT("tactical_unit_died");
+    static const FString TacticalUnitCombatStateChanged = TEXT("tactical_unit_combat_state_changed");
+    static const FString TacticalUnitProned = TEXT("tactical_unit_proned");
 }
 
 UTacticalUnitComponent::UTacticalUnitComponent()
@@ -20,16 +22,31 @@ void UTacticalUnitComponent::BeginPlay()
     Super::BeginPlay();
 
     MaxHP = FMath::Max(1, MaxHP);
-    CurrentHP = bIsAlive
-                    ? FMath::Clamp(CurrentHP > 0 ? CurrentHP : MaxHP, 0, MaxHP)
-                    : 0;
-    bIsAlive = CurrentHP > 0;
+    const bool bStartsDead = CombatState == ECombatUnitState::Dead || !bIsAlive;
+    CurrentHP = bStartsDead
+                    ? 0
+                    : FMath::Clamp(CurrentHP > 0 ? CurrentHP : MaxHP, 0, MaxHP);
+
+    if (bStartsDead || CurrentHP <= 0)
+    {
+        CombatState = ECombatUnitState::Dead;
+        bIsAlive = false;
+    }
+    else if (CombatState == ECombatUnitState::Prone && !bIsPartyMember)
+    {
+        CombatState = ECombatUnitState::Alive;
+        bIsAlive = true;
+    }
+    else
+    {
+        bIsAlive = CombatState != ECombatUnitState::Dead;
+    }
 }
 
 bool UTacticalUnitComponent::IsOccupyingTacticalSpace() const
 {
     // A unit stops blocking tactical space when dead, explicitly disabled, or temporarily suppressed during traversal.
-    return bIsAlive && bBlocksTacticalMovement && !bOccupancySuppressed;
+    return !IsDead() && bBlocksTacticalMovement && !bOccupancySuppressed;
 }
 
 FVector UTacticalUnitComponent::GetOccupiedLocation() const
@@ -85,20 +102,74 @@ void UTacticalUnitComponent::ResetForNewRound()
 {
     // Round reset restores tactical resources but deliberately does not change occupancy sizing.
     ResetEncounterTurnState();
-    RemainingMovementRangeCm = MaxMovementRangeCm;
-    ActionPoints = 1;
-    BonusActionPoints = 1;
-    bTurnConsumed = false;
+    RemainingMovementRangeCm = CanMove() ? MaxMovementRangeCm : 0.0f;
+    ActionPoints = CanAct() ? 1 : 0;
+    BonusActionPoints = CanAct() ? 1 : 0;
+    bTurnConsumed = !CanMove();
+}
+
+bool UTacticalUnitComponent::IsProne() const
+{
+    return CombatState == ECombatUnitState::Prone;
 }
 
 bool UTacticalUnitComponent::IsDead() const
 {
-    return !bIsAlive;
+    return CombatState == ECombatUnitState::Dead;
+}
+
+ECombatUnitState UTacticalUnitComponent::GetCombatState() const
+{
+    return CombatState;
+}
+
+void UTacticalUnitComponent::SetCombatState(ECombatUnitState NewState)
+{
+    if (CombatState == NewState)
+    {
+        return;
+    }
+
+    const ECombatUnitState PreviousState = CombatState;
+    CombatState = NewState;
+    bIsAlive = CombatState != ECombatUnitState::Dead;
+
+    switch (CombatState)
+    {
+    case ECombatUnitState::Alive:
+        if (CurrentHP <= 0)
+        {
+            CurrentHP = 1;
+        }
+        break;
+    case ECombatUnitState::Prone:
+        bIsAlive = true;
+        RemainingMovementRangeCm = 0.0f;
+        ActionPoints = 0;
+        BonusActionPoints = 0;
+        bTurnConsumed = true;
+        bTurnCompleted = true;
+        break;
+    case ECombatUnitState::Dead:
+        bIsAlive = false;
+        CurrentHP = 0;
+        RemainingMovementRangeCm = 0.0f;
+        ActionPoints = 0;
+        BonusActionPoints = 0;
+        bTurnConsumed = true;
+        bTurnCompleted = true;
+        break;
+    default:
+        break;
+    }
+
+    RefreshOwnerStatePresentation(PreviousState, CombatState);
+    PublishCombatStateChangedEvent(PreviousState, CombatState);
 }
 
 void UTacticalUnitComponent::ApplyDamage(int32 DamageAmount)
 {
-    if (!bIsAlive)
+    if (IsDead())
     {
         return;
     }
@@ -108,7 +179,14 @@ void UTacticalUnitComponent::ApplyDamage(int32 DamageAmount)
     CurrentHP = FMath::Clamp(CurrentHP - FMath::Max(0, DamageAmount), 0, MaxHP);
     if (CurrentHP <= 0)
     {
-        MarkDead();
+        if (CombatState == ECombatUnitState::Alive && CanEnterProneState())
+        {
+            SetCombatState(ECombatUnitState::Prone);
+        }
+        else
+        {
+            MarkDead();
+        }
     }
 }
 
@@ -174,7 +252,38 @@ float UTacticalUnitComponent::GetRangedRangeCm() const
 
 bool UTacticalUnitComponent::IsAlive() const
 {
-    return bIsAlive;
+    return CombatState != ECombatUnitState::Dead;
+}
+
+bool UTacticalUnitComponent::CanMove() const
+{
+    return CombatState == ECombatUnitState::Alive;
+}
+
+bool UTacticalUnitComponent::CanAct() const
+{
+    return CombatState == ECombatUnitState::Alive;
+}
+
+bool UTacticalUnitComponent::CanEnterProneState() const
+{
+    return CombatState == ECombatUnitState::Alive && bIsPartyMember;
+}
+
+void UTacticalUnitComponent::RecoverFromProne()
+{
+    if (!IsProne())
+    {
+        return;
+    }
+
+    CurrentHP = FMath::Max(CurrentHP, 1);
+    RemainingMovementRangeCm = MaxMovementRangeCm;
+    ActionPoints = 1;
+    BonusActionPoints = 1;
+    bTurnConsumed = false;
+    bTurnCompleted = false;
+    SetCombatState(ECombatUnitState::Alive);
 }
 
 bool UTacticalUnitComponent::IsPlayerControlled() const
@@ -214,43 +323,12 @@ bool UTacticalUnitComponent::IsEnemyTo(const UTacticalUnitComponent *OtherUnit) 
 
 void UTacticalUnitComponent::MarkDead()
 {
-    if (!bIsAlive)
+    if (IsDead())
     {
         return;
     }
 
-    bIsAlive = false;
-    bTurnCompleted = true;
-    bTurnConsumed = true;
-    CurrentHP = 0;
-    RemainingMovementRangeCm = 0.0f;
-    ActionPoints = 0;
-    BonusActionPoints = 0;
-
-    // Death immediately removes the unit's navigation footprint so future previews can route through it,
-    // while the owning character handles the physical presentation transition such as ragdoll.
-    if (ACRPGBaseCharacter *OwningCharacter = Cast<ACRPGBaseCharacter>(GetOwner()))
-    {
-        OwningCharacter->EnterTacticalDeathState();
-
-        const UTacticalTurnSubsystem *TacticalTurnSubsystem = OwningCharacter->GetGameInstance()
-                                                                  ? OwningCharacter->GetGameInstance()->GetSubsystem<UTacticalTurnSubsystem>()
-                                                                  : nullptr;
-        OwningCharacter->UpdateTacticalOccupancyNavigationBlocker(TacticalTurnSubsystem ? TacticalTurnSubsystem->GetActiveUnit() : nullptr);
-    }
-
-    if (UWorld *World = GetWorld())
-    {
-        if (UGameInstance *GameInstance = World->GetGameInstance())
-        {
-            if (UEventBusSubsystem *EventBusSubsystem = GameInstance->GetSubsystem<UEventBusSubsystem>())
-            {
-                EventBusSubsystem->PublishEvent(
-                    TacticalUnitEvents::TacticalUnitDied,
-                    FString::Printf(TEXT("unit=%s;display_name=%s"), *GetNameSafe(GetOwner()), *GetDisplayName()));
-            }
-        }
-    }
+    SetCombatState(ECombatUnitState::Dead);
 }
 
 void UTacticalUnitComponent::SetInitiative(int32 InValue)
@@ -265,7 +343,7 @@ int32 UTacticalUnitComponent::GetCurrentInitiative() const
 
 void UTacticalUnitComponent::ResetEncounterTurnState()
 {
-    bTurnCompleted = !bIsAlive;
+    bTurnCompleted = !CanAct();
 }
 
 bool UTacticalUnitComponent::HasCompletedEncounterTurn() const
@@ -275,18 +353,23 @@ bool UTacticalUnitComponent::HasCompletedEncounterTurn() const
 
 void UTacticalUnitComponent::SetTurnCompleted(bool bCompleted)
 {
-    bTurnCompleted = bCompleted || !bIsAlive;
+    bTurnCompleted = bCompleted || !CanAct();
 }
 
 void UTacticalUnitComponent::ConsumeMovement(float Amount)
 {
+    if (!CanMove())
+    {
+        return;
+    }
+
     RemainingMovementRangeCm = FMath::Max(0.0f, RemainingMovementRangeCm - FMath::Max(0.0f, Amount));
     bTurnConsumed = RemainingMovementRangeCm <= KINDA_SMALL_NUMBER;
 }
 
 bool UTacticalUnitComponent::HasMovementBudget(float RequiredDistance) const
 {
-    return RemainingMovementRangeCm + KINDA_SMALL_NUMBER >= FMath::Max(0.0f, RequiredDistance);
+    return CanMove() && RemainingMovementRangeCm + KINDA_SMALL_NUMBER >= FMath::Max(0.0f, RequiredDistance);
 }
 
 float UTacticalUnitComponent::GetRemainingMovementRange() const
@@ -306,11 +389,16 @@ int32 UTacticalUnitComponent::GetBonusActionPoints() const
 
 bool UTacticalUnitComponent::HasAnyActionPoints() const
 {
-    return ActionPoints > 0 || BonusActionPoints > 0;
+    return CanAct() && (ActionPoints > 0 || BonusActionPoints > 0);
 }
 
 bool UTacticalUnitComponent::ConsumeActionPoint()
 {
+    if (!CanAct())
+    {
+        return false;
+    }
+
     if (ActionPoints > 0)
     {
         --ActionPoints;
@@ -329,4 +417,70 @@ bool UTacticalUnitComponent::ConsumeActionPoint()
 bool UTacticalUnitComponent::HasTurnConsumed() const
 {
     return bTurnConsumed;
+}
+
+void UTacticalUnitComponent::PublishCombatStateChangedEvent(ECombatUnitState PreviousState, ECombatUnitState NewState) const
+{
+    UWorld *World = GetWorld();
+    UGameInstance *GameInstance = World ? World->GetGameInstance() : nullptr;
+    UEventBusSubsystem *EventBusSubsystem = GameInstance ? GameInstance->GetSubsystem<UEventBusSubsystem>() : nullptr;
+    if (!EventBusSubsystem)
+    {
+        return;
+    }
+
+    EventBusSubsystem->PublishEvent(
+        TacticalUnitEvents::TacticalUnitCombatStateChanged,
+        FString::Printf(
+            TEXT("unit=%s;display_name=%s;previous_state=%d;new_state=%d"),
+            *GetNameSafe(GetOwner()),
+            *GetDisplayName(),
+            static_cast<int32>(PreviousState),
+            static_cast<int32>(NewState)));
+
+    if (NewState == ECombatUnitState::Prone)
+    {
+        EventBusSubsystem->PublishEvent(
+            TacticalUnitEvents::TacticalUnitProned,
+            FString::Printf(TEXT("unit=%s;display_name=%s"), *GetNameSafe(GetOwner()), *GetDisplayName()));
+    }
+
+    if (NewState == ECombatUnitState::Dead)
+    {
+        EventBusSubsystem->PublishEvent(
+            TacticalUnitEvents::TacticalUnitDied,
+            FString::Printf(TEXT("unit=%s;display_name=%s"), *GetNameSafe(GetOwner()), *GetDisplayName()));
+    }
+}
+
+void UTacticalUnitComponent::RefreshOwnerStatePresentation(ECombatUnitState PreviousState, ECombatUnitState NewState)
+{
+    ACRPGBaseCharacter *OwningCharacter = Cast<ACRPGBaseCharacter>(GetOwner());
+    if (!OwningCharacter)
+    {
+        return;
+    }
+
+    switch (NewState)
+    {
+    case ECombatUnitState::Alive:
+        if (PreviousState == ECombatUnitState::Prone)
+        {
+            OwningCharacter->RecoverFromPronePresentation();
+        }
+        break;
+    case ECombatUnitState::Prone:
+        OwningCharacter->EnterTacticalProneState();
+        break;
+    case ECombatUnitState::Dead:
+        OwningCharacter->EnterTacticalDeathState();
+        break;
+    default:
+        break;
+    }
+
+    const UTacticalTurnSubsystem *TacticalTurnSubsystem = OwningCharacter->GetGameInstance()
+                                                              ? OwningCharacter->GetGameInstance()->GetSubsystem<UTacticalTurnSubsystem>()
+                                                              : nullptr;
+    OwningCharacter->UpdateTacticalOccupancyNavigationBlocker(TacticalTurnSubsystem ? TacticalTurnSubsystem->GetActiveUnit() : nullptr);
 }

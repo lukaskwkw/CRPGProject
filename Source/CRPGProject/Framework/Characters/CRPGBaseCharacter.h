@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Combat/Types/CombatTypes.h"
+#include "Combat/Types/EquipmentTypes.h"
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
@@ -8,8 +10,13 @@
 struct FCombatAttackResult;
 
 class UAbilitySystemComponent;
+class UAnimMontage;
+class UCombatLoadoutComponent;
 class UCRPGAttributeSet;
 class UCapsuleComponent;
+class UMeshComponent;
+class USkeletalMeshComponent;
+class UStaticMeshComponent;
 class UTextRenderComponent;
 class UTacticalUnitComponent;
 
@@ -38,7 +45,35 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayMeleeAttackMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayRangedAttackMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayDodgeMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayDodgeMontageForDirection(ECombatReactionDirection Direction);
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayHitReactMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayHitReactMontageForDirection(ECombatReactionDirection Direction);
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
 	void EnterTacticalDeathState();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayDeathMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayDeathMontageForDirection(ECombatReactionDirection Direction);
+	void SetPendingCombatReactionDirection(ECombatReactionDirection Direction);
+	bool ConsumePendingCombatReactionDirection(ECombatReactionDirection &OutDirection);
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	void EnterTacticalProneState();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayProneMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	void RecoverFromPronePresentation();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	float PlayStandUpMontage();
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Combat")
+	void EnableCombatRagdoll();
 	// Controller hover targeting toggles this so combat UI can point at a world-space enemy without needing BP glue.
 	void SetCombatTargetHighlightEnabled(bool bEnabled);
 	// Stores the authored/default outline category configured on the asset or changed explicitly by gameplay code.
@@ -75,6 +110,43 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Tactical")
 	UTacticalUnitComponent *GetTacticalUnitComponent() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	UCombatLoadoutComponent *GetCombatLoadoutComponent() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	ECombatStyleCategory GetCombatStyleCategory() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	ECombatStanceContext GetCombatStanceContext() const;
+	UFUNCTION(BlueprintCallable, Category = "Tactical|Loadout")
+	void SetCombatStanceContext(ECombatStanceContext NewStanceContext);
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	ECombatIdleProfile GetCurrentIdleProfile() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	ECombatLocomotionProfile GetCurrentLocomotionProfile() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool IsCombatReadyStanceActive() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool IsExplorationStanceActive() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesUnarmedStyle() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesBowStyle() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesTwoHandedStyle() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesShieldStyle() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesTwoWeaponsStyle() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesFightIdleProfile() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesNoFightIdleProfile() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesFightLocomotionProfile() const;
+	UFUNCTION(BlueprintPure, Category = "Tactical|Loadout")
+	bool UsesNoFightLocomotionProfile() const;
+	void ApplyCombatLoadoutVisuals();
+	void ClearCombatLoadoutVisuals();
+	float GetCombatReactionFacingYawOffsetDegrees() const { return CombatReactionFacingYawOffsetDegrees; }
 
 	//// Called every frame
 	// virtual void Tick(float DeltaTime) override;
@@ -94,6 +166,45 @@ protected:
 	// Tactical runtime data such as movement budget, initiative state and logical occupancy.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical")
 	UTacticalUnitComponent *TacticalUnitComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UCombatLoadoutComponent> CombatLoadoutComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> MainHandEquipmentStaticMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USkeletalMeshComponent> MainHandEquipmentSkeletalMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> OffHandEquipmentStaticMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USkeletalMeshComponent> OffHandEquipmentSkeletalMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> TwoHandedEquipmentStaticMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USkeletalMeshComponent> TwoHandedEquipmentSkeletalMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> RangedEquipmentStaticMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Visuals", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USkeletalMeshComponent> RangedEquipmentSkeletalMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Sockets", meta = (AllowPrivateAccess = "true"))
+	FName DefaultMainHandEquipmentSocketName = TEXT("hand_r_socket");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Sockets", meta = (AllowPrivateAccess = "true"))
+	FName DefaultOffHandEquipmentSocketName = TEXT("hand_l_socket");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Sockets", meta = (AllowPrivateAccess = "true"))
+	FName DefaultTwoHandedEquipmentSocketName = TEXT("hand_r_socket");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Loadout|Sockets", meta = (AllowPrivateAccess = "true"))
+	FName DefaultRangedEquipmentSocketName = TEXT("spine_socket");
 
 	// Invisible navigation-only footprint used to mark occupied space on the dynamic navmesh.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tactical", meta = (AllowPrivateAccess = "true"))
@@ -115,6 +226,33 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float CombatFeedbackFadeStartFraction = 0.45f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimMontage> MeleeAttackMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimMontage> RangedAttackMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimMontage> DodgeMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimMontage> HitReactMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimMontage> DeathMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimMontage> ProneMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimMontage> StandUpMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
+	float ProneCapsuleHalfHeightCm = 44.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Combat|Animation", meta = (AllowPrivateAccess = "true", ClampMin = "-180.0", ClampMax = "180.0", Units = "deg"))
+	float CombatReactionFacingYawOffsetDegrees = 0.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tactical|Outline", meta = (AllowPrivateAccess = "true"))
 	ECRPGOutlineCategory OutlineCategory = ECRPGOutlineCategory::None;
 
@@ -131,9 +269,22 @@ protected:
 	FVector CombatFeedbackBaseRelativeLocation = FVector::ZeroVector;
 	FColor CombatFeedbackActiveColor = FColor::White;
 	float CombatFeedbackElapsedSeconds = 0.0f;
+	float StandingCapsuleHalfHeightCm = 0.0f;
+	ECombatReactionDirection PendingCombatReactionDirection = ECombatReactionDirection::Front;
 	bool bCombatTargetHighlightEnabled = false;
 	bool bCombatFeedbackAnimating = false;
+	bool bHasPendingCombatReactionDirection = false;
 
+	float PlayConfiguredMontage(UAnimMontage *Montage);
+	float PlayConfiguredMontageRandomSection(UAnimMontage *Montage);
+	float PlayConfiguredMontageSection(UAnimMontage *Montage, ECombatReactionDirection Direction);
+	void InitializeEquipmentVisualComponent(UMeshComponent *MeshComponent) const;
+	void ApplyEquippedVariantVisual(const FCombatEquippedVariant &Variant);
+	void ClearEquipmentSlotVisual(ECombatEquipmentSlot Slot);
+	FName GetDefaultEquipmentSocketName(ECombatEquipmentSlot Slot) const;
+	UStaticMeshComponent *GetEquipmentStaticMeshComponent(ECombatEquipmentSlot Slot) const;
+	USkeletalMeshComponent *GetEquipmentSkeletalMeshComponent(ECombatEquipmentSlot Slot) const;
+	FName GetReactionDirectionSectionName(ECombatReactionDirection Direction) const;
 	void RefreshOutlinePresentation();
 	void ShowCombatFeedbackText(const FString &Text, const FColor &Color);
 	void HideCombatFeedbackText();
